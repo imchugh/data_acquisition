@@ -10,6 +10,8 @@ import ftplib
 import os
 import zipfile
 import StringIO
+import pandas as pd
+import datetime as dt
 import xlrd
 
 # Grab the list of stations from the excel file
@@ -119,3 +121,11 @@ BOM_ID_list, BOM_name_list = get_station_list(sites_file, 'OzFlux')
 f_list = os.listdir(output_dir)
 test_f = os.path.join(output_dir, f_list[0])
 df = pd.read_csv(test_f)
+var_list = df.columns
+df.index = [dt.datetime(df.loc[i, var_list[3]],
+                        df.loc[i, var_list[4]],
+                        df.loc[i, var_list[5]],
+                        df.loc[i, var_list[6]],
+                        df.loc[i, var_list[7]]) for i in range(len(df))]
+test_dates = pd.date_range(df.index[0], df.index[-1], freq = '30T')
+df = df.reindex(test_dates)
