@@ -38,7 +38,8 @@ def get_ftp_data(ftp_server, ftp_dir, output_dir, req_file_list):
     if not os.path.isdir(output_dir): os.mkdir(output_dir)
         
     # Open the zip files and unzip to directory - ignore the solar data
-    master_file_list = []
+    master_sio = StringIO.StringIO() 
+    master_zf = zipfile.ZipFile(master_sio, 'w')
     zip_file_list = [os.path.split(f)[1] for f in ftp.nlst(ftp_dir)]   
     for this_file in zip_file_list:
         if 'globalsolar' in this_file: continue
@@ -47,25 +48,30 @@ def get_ftp_data(ftp_server, ftp_dir, output_dir, req_file_list):
         sio = StringIO.StringIO()
         ftp.retrbinary(f_str, sio.write)
         sio.seek(0)
-        zip_obj = zipfile.ZipFile(sio)
-        file_list = zip_obj.namelist()
-        file_list = subset_station_list(file_list, req_file_list)
-        master_file_list = master_file_list + file_list
+        zf = zipfile.ZipFile(sio)
+        file_list = subset_station_list(zf.namelist(), req_file_list)
         for f in file_list:
-            if not os.path.isfile(os.path.join(output_dir, f)):
-                zip_obj.extract(f, output_dir)
-        zip_obj.close()
+            master_zf.writestr(f, zf.read(f))
+        zf.close()
+
+    ftp.close()
+        
+#    for f in master_zf.namelist():
+#        if not os.path.isfile(os.path.join(output_dir, f)):
+#            master_zf.extract(f, output_dir)
     
     # Check for differences between requested site files and available site
     # files and report to user (print to screen)
+    master_file_list = master_zf.namelist()
     returned_file_list = [f.split('_')[2] for f in master_file_list]
     missing_file_list = list(set(req_file_list) - set(returned_file_list))
     print ('The following site IDs were not available: {0}'
            .format(', '.join(missing_file_list)))
        
-    ftp.close()
+    master_zf.close()    
 
-    return
+    return master_sio
+
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -111,17 +117,16 @@ def get_bom_id_list(bom_sites_info):
             except:
                 continue
     
-    return sorted(bom_id_list)
+    return sorted(list(set(bom_id_list)))
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def subset_station_list(files_list, target_ID_list):
     
-    unq_files_list = sorted(list(set(files_list)))
-    unq_target_ID_list = sorted(list(set(target_ID_list)))
+    unq_files_list = sorted(list(set([f for f in files_list if 'Data' in f])))
     f_names_list = []
     counter = 0
-    for ID in unq_target_ID_list:
+    for ID in target_ID_list:
         for f_name in unq_files_list[counter:]:
             if ID in f_name:
                 f_names_list.append(f_name)
@@ -161,7 +166,7 @@ cf = {"Options":{"FixTimeStepMethod":"round"}}
 # get bom site details
 bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
 bom_id_list = get_bom_id_list(bom_sites_info)
-get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
+sio = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
 
 #in_path = "/mnt/OzFlux/AWS/Current/"
 
