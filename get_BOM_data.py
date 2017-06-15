@@ -44,8 +44,7 @@ def get_station_list(sites_file, sheet_name):
             str_list.append(','.join([a, b]))
         except:
             continue
-    str_list = list(set(str_list))
-    str_list.sort()
+    str_list = sorted(list(set(str_list)))
     ID_list = [this.split(',')[0] for this in str_list]
     name_list = [this.split(',')[1] for this in str_list]
     
@@ -53,10 +52,8 @@ def get_station_list(sites_file, sheet_name):
 
 def subset_station_list(files_list, target_ID_list):
     
-    unq_files_list = list(set(files_list))
-    unq_files_list.sort()
-    unq_target_ID_list = list(set(target_ID_list))
-    unq_target_ID_list.sort()
+    unq_files_list = sorted(list(set(files_list)))
+    unq_target_ID_list = sorted(list(set(target_ID_list)))
     f_names_list = []
     counter = 0
     for ID in unq_target_ID_list:
