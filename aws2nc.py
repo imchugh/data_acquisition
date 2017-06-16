@@ -14,6 +14,7 @@ import pdb
 import ftplib
 import StringIO
 import zipfile
+import datetime as dt
 
 # Import OzFluxQC modules
 import constants as c
@@ -27,51 +28,89 @@ import qcutils
 ###############################################################################
 
 #------------------------------------------------------------------------------
-# Grab the bom data from the ftp server
-def get_ftp_data(ftp_server, ftp_dir, output_dir, req_file_list):
+# Check the quality of the records in the bom file
+def check_file_integrity(path_to_file):
 
-    # Login to ftp server         
-    ftp = ftplib.FTP(ftp_server)
-    ftp.login()   
+    path='/home/ian/Temp/test.txt'
+    line_len = 141
+    element_n = 28
+    line_end = '#'
     
-    # Check directories exist and make them if not
-    if not os.path.isdir(output_dir): os.mkdir(output_dir)
-        
-    # Open the zip files and unzip to directory - ignore the solar data
-    master_sio = StringIO.StringIO() 
-    master_zf = zipfile.ZipFile(master_sio, 'w')
-    zip_file_list = [os.path.split(f)[1] for f in ftp.nlst(ftp_dir)]   
-    for this_file in zip_file_list:
-        if 'globalsolar' in this_file: continue
-        in_file = os.path.join(ftp_dir, this_file)
-        f_str = 'RETR {0}'.format(in_file)
-        sio = StringIO.StringIO()
-        ftp.retrbinary(f_str, sio.write)
-        sio.seek(0)
-        zf = zipfile.ZipFile(sio)
-        file_list = subset_station_list(zf.namelist(), req_file_list)
-        for f in file_list:
-            master_zf.writestr(f, zf.read(f))
-        zf.close()
-
-    ftp.close()
-        
-#    for f in master_zf.namelist():
-#        if not os.path.isfile(os.path.join(output_dir, f)):
-#            master_zf.extract(f, output_dir)
+    # Open the file and read data into memory
+    f = open(path)
+    all_list = f.readlines()
+    header = all_list[0]
+    header_list = header.split(',')
+    data_list = all_list[1:]
     
-    # Check for differences between requested site files and available site
-    # files and report to user (print to screen)
-    master_file_list = master_zf.namelist()
-    returned_file_list = [f.split('_')[2] for f in master_file_list]
-    missing_file_list = list(set(req_file_list) - set(returned_file_list))
-    print ('The following site IDs were not available: {0}'
-           .format(', '.join(missing_file_list)))
-       
-    master_zf.close()    
+    # Do validity checks line by line and build a new structure excluding bad lines
+    good_line_list = []
+    good_line_dict = {}
+    for i, line in enumerate(data_list):  
+        try:
+            line_list = line.split(',')
+            assert len(line) == line_len # line length consistent?
+            assert len(line_list) == element_n # number elements consistent?
+            assert '#' in line_list[-1] # hash last character (ex carriage return)?
+            # Date elements can be parsed as dates?
+            good_line_dict[date_from_line(line_list)] = line
+            good_line_list.append(i)
+        except:
+            continue
+    
+    # Raise error if data is all corrupt
+    if len(good_line_list) == 0:
+        raise IOError('No valid data in file!')
+    
+    # Get the first and last valid dates, then make a date range
+    first_valid_line = min(good_line_list)
+    first_valid_date = get_date_from_line(data_list[first_valid_line].split(','))
+    last_valid_line = max(good_line_list)
+    last_valid_date = get_date_from_line(data_list[last_valid_line].split(','))
+    delta = last_valid_date - first_valid_date
+    count = delta.days * 48 + delta.seconds / 1800 + 1
+    date_list = [first_valid_date + dt.timedelta(minutes = i * 30) for
+                 i in range(count)]
+    
+    # Construct a dummy line
+    dummy_elements = [' ' * len(i) for i in line_list[3: -1]]
+    dummy_line_list = line_list[:3] + dummy_elements + [line_list[-1]]
+    
+    # Reconstruct the data file with the dummy lines in place of missing data
+    new_data_list = []
+    for this_date in date_list:
+        try:
+            new_data_list.append(good_line_dict[this_date])
+        except KeyError:
+            this_dummy_line_list = cp.copy(dummy_line_list)
+            this_dummy_line_list[3] = str(this_date.year)
+            this_dummy_line_list[4] = str(this_date.month).zfill(2)
+            this_dummy_line_list[5] = str(this_date.day).zfill(2)
+            this_dummy_line_list[6] = str(this_date.hour).zfill(2)
+            this_dummy_line_list[7] = str(this_date.minute).zfill(2)
+            this_dummy_line = ','.join(this_dummy_line_list)
+            new_data_list.append(this_dummy_line)
+    
+    new_data_list.insert(0, header)
+    
+    return new_data_list
+    
+#------------------------------------------------------------------------------
 
-    return master_sio
-
+#------------------------------------------------------------------------------
+# Strip a sorted list from the sites info file
+def get_bom_id_list(bom_sites_info):
+    
+    bom_id_list = []
+    for key in bom_sites_info.keys():
+        for sub_key in bom_sites_info[key].keys():
+            try:
+                int(sub_key)
+                bom_id_list.append(sub_key)
+            except:
+                continue
+    
+    return sorted(list(set(bom_id_list)))
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -105,19 +144,72 @@ def get_bom_site_details(path_to_file, sheet_name):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-# Strip a sorted list from the sites info file
-def get_bom_id_list(bom_sites_info):
+# Get the current archive file list and create a dict
+def get_current_file_id(archive_dir):
     
-    bom_id_list = []
-    for key in bom_sites_info.keys():
-        for sub_key in bom_sites_info[key].keys():
-            try:
-                int(sub_key)
-                bom_id_list.append(sub_key)
-            except:
-                continue
+    file_list = os.listdir(archive_dir)
+    id_list = [j.split('.')[0] for j in [i.split('_')[2] for i in file_list]]
+    return dict(zip(id_list, file_list))
     
-    return sorted(list(set(bom_id_list)))
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# Get the date from a standard line of the BOM data
+def get_date_from_line(line_list):
+    return dt.datetime(int(line_list[3]), int(line_list[4]), 
+                       int(line_list[5]), int(line_list[6]), 
+                       int(line_list[7]))
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# Grab the bom data from the ftp server
+def get_ftp_data(ftp_server, ftp_dir, output_dir, req_id_list):
+
+    # Login to ftp server         
+    ftp = ftplib.FTP(ftp_server)
+    ftp.login()   
+    
+    # Check directories exist and make them if not
+    if not os.path.isdir(output_dir): os.mkdir(output_dir)
+        
+    # Open the separate zip files and combine in a single zip file 
+    # held in dynamic memory - ignore the solar data
+    master_sio = StringIO.StringIO() 
+    master_zf = zipfile.ZipFile(master_sio, 'w')
+    zip_file_list = [os.path.split(f)[1] for f in ftp.nlst(ftp_dir)]   
+    for this_file in zip_file_list:
+        if 'globalsolar' in this_file: continue
+        in_file = os.path.join(ftp_dir, this_file)
+        f_str = 'RETR {0}'.format(in_file)
+        sio = StringIO.StringIO()
+        ftp.retrbinary(f_str, sio.write)
+        sio.seek(0)
+        zf = zipfile.ZipFile(sio)
+        file_list = subset_station_list(zf.namelist(), req_id_list)
+        for f in file_list:
+            master_zf.writestr(f, zf.read(f))
+        zf.close()
+
+    ftp.close()
+        
+#    for f in master_zf.namelist():
+#        if not os.path.isfile(os.path.join(output_dir, f)):
+#            master_zf.extract(f, output_dir)
+    
+    # Check for differences between requested site files and available site
+    # files and report to user (print to screen and return truncated list)
+    master_file_list = master_zf.namelist()
+    returned_id_list = [f.split('_')[2] for f in master_file_list]
+    missing_id_list = list(set(req_id_list) - set(returned_id_list))
+    print ('Files for the following station(s) were not available: {0}'
+           .format(', '.join(missing_id_list)))
+    master_zf.close()
+
+    # Make a dictionary to crossmatch file names with bom station id numbers
+    test = dict(zip(returned_id_list, master_file_list))
+    
+    return master_sio, test
+
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -145,17 +237,20 @@ ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_UWA-SEE/'
 output_dir = '/home/ian/BOM_data'
 xlname = "/home/ian/Temp/AWS_Locations.xls"
+archive_path = "/home/ian/BOM_data/base_data"
 
 # Set up logging
 t = time.localtime()
-rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
+rundatetime = (datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5])
+               .strftime("%Y%m%d%H%M"))
 log_filename = '/home/ian/Temp/logfiles/aws2nc_'+rundatetime+'.log'    
 logging.basicConfig(filename=log_filename,
                     format='%(asctime)s %(levelname)s %(message)s',
                     datefmt = '%H:%M:%S',
                     level=logging.DEBUG)
 console = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', '%H:%M:%S')
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', 
+                              '%H:%M:%S')
 console.setFormatter(formatter)
 console.setLevel(logging.INFO)
 logging.getLogger('').addHandler(console)
@@ -166,11 +261,17 @@ cf = {"Options":{"FixTimeStepMethod":"round"}}
 # get bom site details
 bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
 bom_id_list = get_bom_id_list(bom_sites_info)
-sio = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
 
-#in_path = "/mnt/OzFlux/AWS/Current/"
+# Get the available data from the ftp site
+sio, ftp_id_dict = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
+
+# Get the currently available ids and the corresponding file names
+archive_id_dict = get_current_file_id(archive_path)
 
 
+#for bom_id in id_dict.keys():
+    
+    
 
 #
 #in_path = "/mnt/OzFlux/AWS/Current/"
