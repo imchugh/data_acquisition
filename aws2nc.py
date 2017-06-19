@@ -38,16 +38,18 @@ def check_file_integrity(f):
    
     # Do validity checks line by line and build a new structure excluding bad 
     # lines
-    header = f.readline()
+    content_list = f.readlines()
+    header = content_list[0]
+    data_list = content_list[1:]
     good_line_dict = {}
-    for i, line in enumerate(f):  
+    for line in data_list:  
         try:
             line_list = line.split(',')
             assert len(line) == line_len # line length consistent?
             assert len(line_list) == element_n # number elements consistent?
             assert '#' in line_list[-1] # hash last character (ex carriage return)?
             # Date elements can be parsed as dates?
-            good_line_dict[get_date_from_line(line_list)] = line
+            good_line_dict[get_date_from_line(line)] = line
         except:
             continue
 
@@ -55,9 +57,8 @@ def check_file_integrity(f):
     # return unaltered data if all data is good
     if len(good_line_dict) == 0:
         raise IOError('No or corrupt data in file!')
-    elif len(good_line_dict) == i + 1:
-        f.seek(0)
-        return f.readlines()
+    elif len(good_line_dict) == len(data_list):
+        return content_list
     
     # ... otherwise ...
 
@@ -161,16 +162,21 @@ def get_current_file_id(archive_dir):
     
     file_list = os.listdir(archive_dir)
     id_list = [j.split('.')[0] for j in [i.split('_')[2] for i in file_list]]
-    return dict(zip(id_list, file_list))    
+    path_file_list = [os.path.join(archive_dir, f) for f in file_list]
+    return dict(zip(id_list, path_file_list))    
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 # Get the date from a standard line of the BOM data
-def get_date_from_line(line_list):
+def get_date_from_line(line):
     
-    return dt.datetime(int(line_list[3]), int(line_list[4]), 
-                       int(line_list[5]), int(line_list[6]), 
-                       int(line_list[7]))
+    line_list = line.split(',')
+    try:
+        return dt.datetime(int(line_list[3]), int(line_list[4]), 
+                           int(line_list[5]), int(line_list[6]), 
+                           int(line_list[7]))
+    except:
+        pdb.set_trace()
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -270,15 +276,15 @@ logging.getLogger('').addHandler(console)
 # dummy control file for FixTimeSteps
 cf = {"Options":{"FixTimeStepMethod":"round"}}
 
-## get bom site details
-#bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
-#bom_id_list = get_bom_id_list(bom_sites_info)
-#
-## Get the available data from the ftp site
-#sio, ftp_id_dict = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
-#
-## Get the currently available ids and the corresponding file names
-#archive_id_dict = get_current_file_id(archive_path)
+# get bom site details
+bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
+bom_id_list = get_bom_id_list(bom_sites_info)
+
+# Get the available data from the ftp site
+sio, ftp_id_dict = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
+
+# Get the currently available ids and the corresponding file names
+archive_id_dict = get_current_file_id(archive_path)
 
 z = zipfile.ZipFile(sio)
 
@@ -302,20 +308,19 @@ for this_id in site_id:
         print 'Updating file for station {0}...'.format(this_id)
 #        f = z.open(ftp_id_dict[this_id], 'r')
         try:
-
-
             f = z.open(ftp_id_dict[this_id], 'r')
-            pdb.set_trace()
-            file_text = check_file_integrity(z.open(ftp_id_dict[this_id], 'r'))
-
+            bom_file_text = check_file_integrity(f)
+            bom_start_date = get_date_from_line(file_text[1])
         except IOError, e:
             print e
         f.close()
         print 'Done!'
-        with open(archive_id_dict[this_id], 'a') as xf:
+#        archive_path = os.path.join(archive_path, archive_id_dict[this_id])
+        with open(archive_id_dict[this_id], 'a+') as xf:
             print 'Successfully opened'
-            xf.seek(1)
-            print line
+#            xf.seek(1)
+            print xf.readline()
+            arc_start_date = get_date_from_line(xf.readline())
     except KeyError:
         print 'No new data for station {0}'.format(site_id)
 
