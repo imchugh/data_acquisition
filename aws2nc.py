@@ -15,6 +15,7 @@ import ftplib
 import StringIO
 import zipfile
 import datetime as dt
+import copy as cp
 
 # Import OzFluxQC modules
 import constants as c
@@ -29,72 +30,83 @@ import qcutils
 
 #------------------------------------------------------------------------------
 # Check the quality of the records in the bom file
-def check_file_integrity(path_to_file):
+def check_file_integrity(f):
 
-    path='/home/ian/Temp/test.txt'
+    # Set values for validity checks
     line_len = 141
-    element_n = 28
-    line_end = '#'
-    
-    # Open the file and read data into memory
-    f = open(path)
-    all_list = f.readlines()
-    header = all_list[0]
-    header_list = header.split(',')
-    data_list = all_list[1:]
-    
-    # Do validity checks line by line and build a new structure excluding bad lines
-    good_line_list = []
+    element_n = 28   
+   
+    # Do validity checks line by line and build a new structure excluding bad 
+    # lines
+    header = f.readline()
     good_line_dict = {}
-    for i, line in enumerate(data_list):  
+    for i, line in enumerate(f):  
         try:
             line_list = line.split(',')
             assert len(line) == line_len # line length consistent?
             assert len(line_list) == element_n # number elements consistent?
             assert '#' in line_list[-1] # hash last character (ex carriage return)?
             # Date elements can be parsed as dates?
-            good_line_dict[date_from_line(line_list)] = line
-            good_line_list.append(i)
+            good_line_dict[get_date_from_line(line_list)] = line
         except:
             continue
+
+    # Raise error if all data is corrupt or missing, 
+    # return unaltered data if all data is good
+    if len(good_line_dict) == 0:
+        raise IOError('No or corrupt data in file!')
+    elif len(good_line_dict) == i + 1:
+        f.seek(0)
+        return f.readlines()
     
-    # Raise error if data is all corrupt
-    if len(good_line_list) == 0:
-        raise IOError('No valid data in file!')
-    
+    # ... otherwise ...
+
     # Get the first and last valid dates, then make a date range
-    first_valid_line = min(good_line_list)
-    first_valid_date = get_date_from_line(data_list[first_valid_line].split(','))
-    last_valid_line = max(good_line_list)
-    last_valid_date = get_date_from_line(data_list[last_valid_line].split(','))
-    delta = last_valid_date - first_valid_date
-    count = delta.days * 48 + delta.seconds / 1800 + 1
-    date_list = [first_valid_date + dt.timedelta(minutes = i * 30) for
-                 i in range(count)]
-    
-    # Construct a dummy line
-    dummy_elements = [' ' * len(i) for i in line_list[3: -1]]
-    dummy_line_list = line_list[:3] + dummy_elements + [line_list[-1]]
-    
+    valid_dates_list = sorted(good_line_dict.keys())
+    first_valid_date = valid_dates_list[0]
+    last_valid_date = valid_dates_list[-1]
+    date_list = generate_date_list(first_valid_date, last_valid_date)
+
+    # get a valid sample line to use as blueprint for dummies
+    sample_line = good_line_dict[first_valid_date]
+        
     # Reconstruct the data file with the dummy lines in place of missing data
     new_data_list = []
     for this_date in date_list:
         try:
             new_data_list.append(good_line_dict[this_date])
         except KeyError:
-            this_dummy_line_list = cp.copy(dummy_line_list)
-            this_dummy_line_list[3] = str(this_date.year)
-            this_dummy_line_list[4] = str(this_date.month).zfill(2)
-            this_dummy_line_list[5] = str(this_date.day).zfill(2)
-            this_dummy_line_list[6] = str(this_date.hour).zfill(2)
-            this_dummy_line_list[7] = str(this_date.minute).zfill(2)
-            this_dummy_line = ','.join(this_dummy_line_list)
-            new_data_list.append(this_dummy_line)
+#            pdb.set_trace()
+            new_data_list.append(generate_dummy_line(sample_line, this_date))
     
     new_data_list.insert(0, header)
     
     return new_data_list
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# Make a list of dates
+def generate_date_list(start_date, end_date):
     
+    if not start_date < end_date:
+        raise Exception
+    delta = end_date - start_date
+    count = delta.days * 48 + delta.seconds / 1800 + 1
+    return [start_date + dt.timedelta(minutes = i * 30) for
+            i in range(count)]
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def generate_dummy_line(line, date):
+    
+    line_list = line.split(',')
+    start_list = ['dd', line_list[1], line_list[2]]
+    date_list = [str(date.year), str(date.month).zfill(2), 
+                 str(date.day).zfill(2), str(date.hour).zfill(2), 
+                 str(date.minute).zfill(2)]
+    data_list = [' ' * len(i) for i in line_list[8: -1]]
+    dummy_list = start_list + date_list + data_list + [line_list[-1]]
+    return ','.join(dummy_list)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -149,13 +161,13 @@ def get_current_file_id(archive_dir):
     
     file_list = os.listdir(archive_dir)
     id_list = [j.split('.')[0] for j in [i.split('_')[2] for i in file_list]]
-    return dict(zip(id_list, file_list))
-    
+    return dict(zip(id_list, file_list))    
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 # Get the date from a standard line of the BOM data
 def get_date_from_line(line_list):
+    
     return dt.datetime(int(line_list[3]), int(line_list[4]), 
                        int(line_list[5]), int(line_list[6]), 
                        int(line_list[7]))
@@ -197,7 +209,7 @@ def get_ftp_data(ftp_server, ftp_dir, output_dir, req_id_list):
 #            master_zf.extract(f, output_dir)
     
     # Check for differences between requested site files and available site
-    # files and report to user (print to screen and return truncated list)
+    # files and report to user (print to screen)
     master_file_list = master_zf.namelist()
     returned_id_list = [f.split('_')[2] for f in master_file_list]
     missing_id_list = list(set(req_id_list) - set(returned_id_list))
@@ -206,9 +218,9 @@ def get_ftp_data(ftp_server, ftp_dir, output_dir, req_id_list):
     master_zf.close()
 
     # Make a dictionary to crossmatch file names with bom station id numbers
-    test = dict(zip(returned_id_list, master_file_list))
+    bom_id_dict = dict(zip(returned_id_list, master_file_list))
     
-    return master_sio, test
+    return master_sio, bom_id_dict
 
 #------------------------------------------------------------------------------
 
@@ -258,17 +270,60 @@ logging.getLogger('').addHandler(console)
 # dummy control file for FixTimeSteps
 cf = {"Options":{"FixTimeStepMethod":"round"}}
 
-# get bom site details
-bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
-bom_id_list = get_bom_id_list(bom_sites_info)
+## get bom site details
+#bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
+#bom_id_list = get_bom_id_list(bom_sites_info)
+#
+## Get the available data from the ftp site
+#sio, ftp_id_dict = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
+#
+## Get the currently available ids and the corresponding file names
+#archive_id_dict = get_current_file_id(archive_path)
 
-# Get the available data from the ftp site
-sio, ftp_id_dict = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
+z = zipfile.ZipFile(sio)
 
-# Get the currently available ids and the corresponding file names
-archive_id_dict = get_current_file_id(archive_path)
+site_id = ['009053']
+
+path='/home/ian/BOM_data/base_data/'
+#f=open(os.path.join(path, archive_id_dict[site_id]), 'a+')
+#for line in f:
+#    pass
+#date=get_date_from_line(line.split(','))
+#
+#
+#new_f = z.open(ftp_id_dict[site_id])
+#header = new_f.readline()
+#a = new_f.readline()
+#start_date = get_date_from_line(a.split(','))
 
 
+for this_id in site_id:
+    try:
+        print 'Updating file for station {0}...'.format(this_id)
+#        f = z.open(ftp_id_dict[this_id], 'r')
+        try:
+
+
+            f = z.open(ftp_id_dict[this_id], 'r')
+            pdb.set_trace()
+            file_text = check_file_integrity(z.open(ftp_id_dict[this_id], 'r'))
+
+        except IOError, e:
+            print e
+        f.close()
+        print 'Done!'
+        with open(archive_id_dict[this_id], 'a') as xf:
+            print 'Successfully opened'
+            xf.seek(1)
+            print line
+    except KeyError:
+        print 'No new data for station {0}'.format(site_id)
+
+        
+        
+
+# Check the integrity of all files in zip
+#chk_sio = check_file_integrity(sio)
 #for bom_id in id_dict.keys():
     
     
