@@ -16,6 +16,7 @@ import StringIO
 import zipfile
 import datetime as dt
 import copy as cp
+import shutil
 
 # Import OzFluxQC modules
 import constants as c
@@ -29,64 +30,20 @@ import qcutils
 ###############################################################################
 
 #------------------------------------------------------------------------------
-# Check the quality of the records in the bom file
-def check_file_integrity(f):
-
+def check_line_integrity(line):
+    
     # Set values for validity checks
     line_len = 141
     element_n = 28   
-   
-    # Do validity checks line by line and build a new structure excluding bad 
-    # lines
-    content_list = f.readlines()
-    header = content_list[0]
-    data_list = content_list[1:]
-    good_line_dict = {}
-    for line in data_list:  
-        try:
-            line_list = line.split(',')
-            assert len(line) == line_len # line length consistent?
-            assert len(line_list) == element_n # number elements consistent?
-            assert '#' in line_list[-1] # hash last character (ex carriage return)?
-            # Date elements can be parsed as dates?
-            good_line_dict[get_date_from_line(line)] = line
-        except:
-            continue
-
-    # Raise error if all data is corrupt or missing, 
-    # return unaltered data if all data is good
-    if len(good_line_dict) == 0:
-        raise IOError('No or corrupt data in file!')
-    elif len(good_line_dict) == len(data_list):
-        return content_list
     
-    # ... otherwise ...
-
-    # Get the first and last valid dates, then make a date range
-    valid_dates_list = sorted(good_line_dict.keys())
-    first_valid_date = valid_dates_list[0]
-    last_valid_date = valid_dates_list[-1]
-    date_list = generate_date_list(first_valid_date, last_valid_date)
-
-    # get a valid sample line to use as blueprint for dummies
-    sample_line = good_line_dict[first_valid_date]
-        
-    # Reconstruct the data file with the dummy lines in place of missing data
-    new_data_list = []
-    for this_date in date_list:
-        try:
-            new_data_list.append(good_line_dict[this_date])
-        except KeyError:
-#            pdb.set_trace()
-            new_data_list.append(generate_dummy_line(sample_line, this_date))
-    
-    new_data_list.insert(0, header)
-    
-    return new_data_list
+    # Do checks
+    line_list = line.split(',')
+    assert len(line) == line_len # line length consistent?
+    assert len(line_list) == element_n # number elements consistent?
+    assert '#' in line_list[-1] # hash last character (ex carriage return)?
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-# Make a list of dates
 def generate_date_list(start_date, end_date):
     
     if not start_date < end_date:
@@ -98,9 +55,9 @@ def generate_date_list(start_date, end_date):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def generate_dummy_line(line, date):
+def generate_dummy_line(valid_line, date):
     
-    line_list = line.split(',')
+    line_list = valid_line.split(',')
     start_list = ['dd', line_list[1], line_list[2]]
     date_list = [str(date.year), str(date.month).zfill(2), 
                  str(date.day).zfill(2), str(date.hour).zfill(2), 
@@ -108,6 +65,17 @@ def generate_dummy_line(line, date):
     data_list = [' ' * len(i) for i in line_list[8: -1]]
     dummy_list = start_list + date_list + data_list + [line_list[-1]]
     return ','.join(dummy_list)
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def generate_file_copy(old_fpname):
+    
+    path = os.path.dirname(old_fpname)
+    old_fname = os.path.basename(old_fpname)
+    new_fname = '{0}.tmp'.format(os.path.splitext(old_fname)[0])
+    new_fpname = os.path.join(path, new_fname)
+    shutil.copyfile(old_fpname, new_fpname)
+    return new_fpname
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -157,39 +125,32 @@ def get_bom_site_details(path_to_file, sheet_name):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-# Get the current archive file list and create a dict
-def get_current_file_id(archive_dir):
-    
-    file_list = os.listdir(archive_dir)
-    id_list = [j.split('.')[0] for j in [i.split('_')[2] for i in file_list]]
-    path_file_list = [os.path.join(archive_dir, f) for f in file_list]
-    return dict(zip(id_list, path_file_list))    
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
 # Get the date from a standard line of the BOM data
 def get_date_from_line(line):
     
     line_list = line.split(',')
-    try:
-        return dt.datetime(int(line_list[3]), int(line_list[4]), 
-                           int(line_list[5]), int(line_list[6]), 
-                           int(line_list[7]))
-    except:
-        pdb.set_trace()
+    return dt.datetime(int(line_list[3]), int(line_list[4]), 
+                       int(line_list[5]), int(line_list[6]), 
+                       int(line_list[7]))
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# Get the current file list and create a dict
+def get_file_id_dict(file_list):
+    
+    file_list = [i for i in file_list if not 'archive' in i]
+    id_list = [j.split('.')[0][:7] for j in [i.split('_')[2] for i in file_list]]
+    return dict(zip(id_list, file_list))    
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 # Grab the bom data from the ftp server
-def get_ftp_data(ftp_server, ftp_dir, output_dir, req_id_list):
+def get_ftp_data(ftp_server, ftp_dir, req_id_list):
 
     # Login to ftp server         
     ftp = ftplib.FTP(ftp_server)
     ftp.login()   
     
-    # Check directories exist and make them if not
-    if not os.path.isdir(output_dir): os.mkdir(output_dir)
-        
     # Open the separate zip files and combine in a single zip file 
     # held in dynamic memory - ignore the solar data
     master_sio = StringIO.StringIO() 
@@ -209,25 +170,96 @@ def get_ftp_data(ftp_server, ftp_dir, output_dir, req_id_list):
         zf.close()
 
     ftp.close()
-        
-#    for f in master_zf.namelist():
-#        if not os.path.isfile(os.path.join(output_dir, f)):
-#            master_zf.extract(f, output_dir)
-    
-    # Check for differences between requested site files and available site
-    # files and report to user (print to screen)
-    master_file_list = master_zf.namelist()
-    returned_id_list = [f.split('_')[2] for f in master_file_list]
-    missing_id_list = list(set(req_id_list) - set(returned_id_list))
-    print ('Files for the following station(s) were not available: {0}'
-           .format(', '.join(missing_id_list)))
     master_zf.close()
 
-    # Make a dictionary to crossmatch file names with bom station id numbers
-    bom_id_dict = dict(zip(returned_id_list, master_file_list))
-    
-    return master_sio, bom_id_dict
+    return master_sio
+#------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------
+def process_data(z, data_path):
+    
+    ftp_id_dict = get_file_id_dict(z.namelist())
+    current_id_dict = get_file_id_dict(os.listdir(data_path))
+    
+    for site_id in sorted(ftp_id_dict):
+    
+        # Open the file and read into memory as a dict (skip to next file if no 
+        # - or all corrupt - data)    
+        with z.open(ftp_id_dict[site_id], 'r') as bom_f:
+            bom_header = bom_f.readline()
+            if len(bom_header) == 0:
+                print ('No data found in ftp file for BOM site ID {0}; '
+                       'skipping...'.format(site_id))
+                continue
+            bom_dict = {}
+            for line in bom_f:
+                try:
+                    date = get_date_from_line(line)
+                    check_line_integrity(line)
+                    bom_dict[date] = line
+                except:
+                    continue
+        if len(bom_dict) == 0:
+            print ('No valid data found in ftp file for BOM site ID {0}; '
+                   'skipping update!'.format(site_id))
+            continue
+                    
+        # Check if there is a current file for this site id
+        if site_id in current_id_dict:
+    
+            # If so, read it into memory as a dict
+            fname = current_id_dict[site_id]
+            current_fpname = os.path.join(data_path, fname)
+            with open(current_fpname, 'r') as current_f:
+                current_dict = {}
+                for i, line in enumerate(current_f):
+                    if i == 0:
+                        current_header = line
+                    else:
+                        date = get_date_from_line(line)
+                        current_dict[date] = line
+            try:
+                assert bom_header == current_header
+            except AssertionError:
+                print ('Headers of ftp and existing files do not match! '
+                       'Skipping!')
+                continue
+            
+            # Create a date list spanning from the beginning of the existing 
+            # file to the end of the ftp file, make a temporary copy in case 
+            # the process crashes midway through, reopen the file in write mode 
+            # and iterate through all dates, writing the line from the relevant 
+            # dict
+            temp_fpname = generate_file_copy(current_fpname)
+            date_list = generate_date_list(sorted(current_dict.keys())[0],
+                                           sorted(bom_dict.keys())[-1])        
+            with open(current_fpname, 'w') as out_f:
+                out_f.write(current_header)
+                for date in date_list:
+                    try:
+                        line = current_dict[date]
+                        assert line[:2] == 'hm'
+                    except KeyError, AssertionError:
+                        try:
+                            line = bom_dict[date]
+                        except KeyError:
+                            line = generate_dummy_line(line, date)
+                    out_f.write(line)
+            os.remove(temp_fpname)
+                            
+        else:
+            
+            # Write all clean lines from BOM file to new file
+            print ('No archive file for BOM station ID {0}; creating...'
+                   .format(site_id))
+            out_fname = os.path.join(data_path, 
+                                     'bom_station_{0}.txt'.format(site_id))
+            date_list = sorted(bom_dict.keys())
+            with open(out_fname, 'w') as out_f:
+                out_f.write(bom_header)
+                for date in date_list:
+                    line = bom_dict[date]
+                    out_f.write(line)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -252,10 +284,9 @@ def subset_station_list(files_list, target_ID_list):
 
 # Set stuff up
 ftp_server = 'ftp.bom.gov.au'
-ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_UWA-SEE/'
-output_dir = '/home/ian/BOM_data'
+ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 xlname = "/home/ian/Temp/AWS_Locations.xls"
-archive_path = "/home/ian/BOM_data/base_data"
+data_path = "/home/ian/BOM_data/"
 
 # Set up logging
 t = time.localtime()
@@ -280,58 +311,16 @@ cf = {"Options":{"FixTimeStepMethod":"round"}}
 bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
 bom_id_list = get_bom_id_list(bom_sites_info)
 
-# Get the available data from the ftp site
-sio, ftp_id_dict = get_ftp_data(ftp_server, ftp_dir, output_dir, bom_id_list)
-
-# Get the currently available ids and the corresponding file names
-archive_id_dict = get_current_file_id(archive_path)
-
+# Get the available data from the ftp site and cross-check against request
+sio = get_ftp_data(ftp_server, ftp_dir, bom_id_list)
 z = zipfile.ZipFile(sio)
+ftp_id_dict = get_file_id_dict(z.namelist())
+missing_from_ftp = ', '.join(list(set(bom_id_list)-set(ftp_id_dict.keys())))
+print ('The following requested BOM site IDs were missing from ftp site: {0}'
+       .format(missing_from_ftp))
 
-site_id = ['009053']
-
-path='/home/ian/BOM_data/base_data/'
-#f=open(os.path.join(path, archive_id_dict[site_id]), 'a+')
-#for line in f:
-#    pass
-#date=get_date_from_line(line.split(','))
-#
-#
-#new_f = z.open(ftp_id_dict[site_id])
-#header = new_f.readline()
-#a = new_f.readline()
-#start_date = get_date_from_line(a.split(','))
-
-
-for this_id in site_id:
-    try:
-        print 'Updating file for station {0}...'.format(this_id)
-#        f = z.open(ftp_id_dict[this_id], 'r')
-        try:
-            f = z.open(ftp_id_dict[this_id], 'r')
-            bom_file_text = check_file_integrity(f)
-            bom_start_date = get_date_from_line(file_text[1])
-        except IOError, e:
-            print e
-        f.close()
-        print 'Done!'
-#        archive_path = os.path.join(archive_path, archive_id_dict[this_id])
-        with open(archive_id_dict[this_id], 'a+') as xf:
-            print 'Successfully opened'
-#            xf.seek(1)
-            print xf.readline()
-            arc_start_date = get_date_from_line(xf.readline())
-    except KeyError:
-        print 'No new data for station {0}'.format(site_id)
-
-        
-        
-
-# Check the integrity of all files in zip
-#chk_sio = check_file_integrity(sio)
-#for bom_id in id_dict.keys():
-    
-    
+# Process the data
+process_data(z, data_path)
 
 #
 #in_path = "/mnt/OzFlux/AWS/Current/"
