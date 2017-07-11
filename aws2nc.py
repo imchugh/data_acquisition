@@ -229,7 +229,7 @@ def process_data(z, data_path):
             # file to the end of the ftp file, make a temporary copy in case 
             # the process crashes midway through, reopen the file in write mode 
             # and iterate through all dates, writing the line from the relevant 
-            # dict
+            # dict, then if the process completes, kill the copy
             temp_fpname = generate_file_copy(current_fpname)
             date_list = generate_date_list(sorted(current_dict.keys())[0],
                                            sorted(bom_dict.keys())[-1])        
@@ -239,7 +239,7 @@ def process_data(z, data_path):
                     try:
                         line = current_dict[date]
                         assert line[:2] == 'hm'
-                    except KeyError, AssertionError:
+                    except (KeyError, AssertionError):
                         try:
                             line = bom_dict[date]
                         except KeyError:
@@ -321,6 +321,7 @@ print ('The following requested BOM site IDs were missing from ftp site: {0}'
 
 # Process the data
 process_data(z, data_path)
+#z.close()
 
 #
 #in_path = "/mnt/OzFlux/AWS/Current/"
