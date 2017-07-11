@@ -9,9 +9,9 @@ Created on Mon Jul  3 12:16:33 2017
 import xlrd
 import os
 
-xlname = "/home/ian/Temp/AWS_Locations.xls"
-archive_fpname = '/home/ian/Downloads/HM01X_Data_009053.csv'
-outfile_fpname = '/home/ian/Temp/output.csv'
+xlname = "/mnt/OzFlux/AWS/AWS_Locations.xls"
+#archive_fpname = '/home/ian/Downloads/HM01X_Data_009053.csv'
+#outfile_fpname = '/home/ian/Temp/output.csv'
 
 # get the site information and the AWS stations to use
 def get_bom_site_details(path_to_file, sheet_name):
@@ -50,18 +50,35 @@ for key in sites_dict.keys():
             id_name_dict[sub_key] = sites_dict[key][sub_key]['site_name']
         except:
             pass
+id_name_dict['005008'] = 'Mardie'
+id_name_dict['007176'] = 'Newman Aero'
+id_name_dict['007185'] = 'Paraburdoo Aero'
 
-station_id = os.path.splitext(os.path.basename(archive_fpname))[0].split('_')[2] 
-station_name = id_name_dict[station_id]
- 
-with open(archive_fpname, 'r') as in_f, open(outfile_fpname, 'w') as out_f:
-    header = in_f.readline()
-    header_list = header.split(',')
-    new_header_list = header_list[:2] + ['Station Name'] + header_list[7:]
-    new_header=','.join(new_header_list)
-    out_f.write(new_header)
-    for line in in_f:
-        line_list = line.split(',')
-        new_line_list = line_list[:2] + [station_name] + line_list[7:]
-        new_line = ','.join(new_line_list)
-        out_f.write(new_line)
+in_path = '/mnt/OzFlux/AWS/Current'
+out_path = '/mnt/OzFlux/AWS/Test'
+f_list = os.listdir(in_path)
+
+for f_name in f_list:
+
+    fname_part = os.path.splitext(f_name)[0]
+    this_id = fname_part.split('_')[2]
+
+    try:
+        station_name = id_name_dict[this_id].ljust(40)
+    except KeyError:
+        print 'No dictionary entry for file {0}'.format(this_id)
+        continue
+
+    in_fpname = os.path.join(in_path, f_name)
+    out_fpname = os.path.join(out_path, f_name)
+    with open(in_fpname, 'r') as in_f, open(out_fpname, 'w') as out_f:
+        header = in_f.readline()
+        header_list = header.split(',')
+        new_header_list = header_list[:2] + ['Station Name'] + header_list[7:]
+        new_header=','.join(new_header_list)
+        out_f.write(new_header)
+        for line in in_f:
+            line_list = line.split(',')
+            new_line_list = line_list[:2] + [station_name] + line_list[7:]
+            new_line = ','.join(new_line_list)
+            out_f.write(new_line)
