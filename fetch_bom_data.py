@@ -18,12 +18,13 @@ import datetime as dt
 import copy as cp
 import shutil
 
-# Import OzFluxQC modules
-import constants as c
-import meteorologicalfunctions as mf
-import qcio
-import qcts
-import qcutils
+# Import custom modules
+#import constants as c
+#import meteorologicalfunctions as mf
+#import qcio
+#import qcts
+#import qcutils
+import grunt_email
 
 ###############################################################################
 # Functions                                                                   #
@@ -285,14 +286,15 @@ def subset_station_list(files_list, target_ID_list):
 # Set stuff up
 ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
-xlname = "/home/ian/Temp/AWS_Locations.xls"
-data_path = "/home/ian/BOM_data/"
+xlname = "/mnt/OzFlux/AWS/AWS_Locations.xls"
+data_path = "/mnt/OzFlux/AWS/New/"
+mail_recipients = ['ian_mchugh@fastmail.com']
 
 # Set up logging
 t = time.localtime()
 rundatetime = (datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5])
                .strftime("%Y%m%d%H%M"))
-log_filename = '/home/ian/Temp/logfiles/aws2nc_'+rundatetime+'.log'    
+log_filename = '/home/imchugh/Temp/logfiles/aws2nc_'+rundatetime+'.log'    
 logging.basicConfig(filename=log_filename,
                     format='%(asctime)s %(levelname)s %(message)s',
                     datefmt = '%H:%M:%S',
@@ -307,21 +309,29 @@ logging.getLogger('').addHandler(console)
 # dummy control file for FixTimeSteps
 cf = {"Options":{"FixTimeStepMethod":"round"}}
 
-# get bom site details
-bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
-bom_id_list = get_bom_id_list(bom_sites_info)
+try:
+    # get bom site details
+    bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
+    bom_id_list = get_bom_id_list(bom_sites_info)
 
-# Get the available data from the ftp site and cross-check against request
-sio = get_ftp_data(ftp_server, ftp_dir, bom_id_list)
-z = zipfile.ZipFile(sio)
-ftp_id_dict = get_file_id_dict(z.namelist())
-missing_from_ftp = ', '.join(list(set(bom_id_list)-set(ftp_id_dict.keys())))
-print ('The following requested BOM site IDs were missing from ftp site: {0}'
-       .format(missing_from_ftp))
+    # Get the available data from the ftp site and cross-check against request
+    sio = get_ftp_data(ftp_server, ftp_dir, bom_id_list)
+    z = zipfile.ZipFile(sio)
+    ftp_id_dict = get_file_id_dict(z.namelist())
+    missing_from_ftp = ', '.join(list(set(bom_id_list)-set(ftp_id_dict.keys())))
+    print ('The following requested BOM site IDs were missing from ftp site: {0}'
+           .format(missing_from_ftp))
+    # Process the data
+    process_data(z, data_path)
+    z.close()
+    grunt_email.email_send(mail_recipients, 'BOM data processing status', 
+                     'Successfully collected and processed data for BOM stations '
+                     '(see log for details)')
+except Exception, e:
+    grunt_email.email_send(mail_recipients, 'BOM data processing status', 
+                     'Data processing failed with the following message {0} '
+                     .format(e))
 
-# Process the data
-process_data(z, data_path)
-#z.close()
 
 #
 #in_path = "/mnt/OzFlux/AWS/Current/"
