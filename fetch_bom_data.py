@@ -181,16 +181,22 @@ def process_data(z, data_path):
     
     ftp_id_dict = get_file_id_dict(z.namelist())
     current_id_dict = get_file_id_dict(os.listdir(data_path))
-    
+
+    logging.info('Unzipping and processing files:')    
+
     for site_id in sorted(ftp_id_dict):
-    
+        
+        # Set up the list for messages to be collated for printing and logging
+        msg_list = []
+        msg_list.append('BOM station ID {}: '.format(site_id))
+
         # Open the file and read into memory as a dict (skip to next file if no 
         # - or all corrupt - data)    
         with z.open(ftp_id_dict[site_id], 'r') as bom_f:
             bom_header = bom_f.readline()
             if len(bom_header) == 0:
-                print ('No data found in ftp file for BOM site ID {0}; '
-                       'skipping...'.format(site_id))
+                msg_list.append('No data found in ftp file; skipping update...')
+                logging.warning(''.join(msg_list))
                 continue
             bom_dict = {}
             for line in bom_f:
@@ -201,8 +207,8 @@ def process_data(z, data_path):
                 except:
                     continue
         if len(bom_dict) == 0:
-            print ('No valid data found in ftp file for BOM site ID {0}; '
-                   'skipping update!'.format(site_id))
+            msg_list.append('No valid data found in ftp file; skipping update...')
+            logging.warning(''.join(msg_list))
             continue
                     
         # Check if there is a current file for this site id
@@ -222,10 +228,11 @@ def process_data(z, data_path):
             try:
                 assert bom_header == current_header
             except AssertionError:
-                print ('Headers of ftp and existing files do not match! '
-                       'Skipping!')
+                msg_list.append('Headers of ftp and existing files do not match! '
+                                'Skipping!')
+                logging.warning(''.join(msg_list))
                 continue
-            
+
             # Create a date list spanning from the beginning of the existing 
             # file to the end of the ftp file, make a temporary copy in case 
             # the process crashes midway through, reopen the file in write mode 
@@ -247,12 +254,14 @@ def process_data(z, data_path):
                             line = generate_dummy_line(line, date)
                     out_f.write(line)
             os.remove(temp_fpname)
+            msg_list.append('Successfully updated file!')
+            logging.info(''.join(msg_list))
                             
         else:
             
             # Write all clean lines from BOM file to new file
-            print ('No archive file for BOM station ID {0}; creating...'
-                   .format(site_id))
+            msg_list.append('No archive file available... '
+                            .format(site_id))
             out_fname = os.path.join(data_path, 
                                      'bom_station_{0}.txt'.format(site_id))
             date_list = sorted(bom_dict.keys())
@@ -261,6 +270,9 @@ def process_data(z, data_path):
                 for date in date_list:
                     line = bom_dict[date]
                     out_f.write(line)
+            msg_list.append('Successfully created file!')
+            logging.warning(''.join(msg_list))
+           
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -294,20 +306,23 @@ mail_recipients = ['ian_mchugh@fastmail.com']
 t = time.localtime()
 rundatetime = (datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5])
                .strftime("%Y%m%d%H%M"))
-log_filename = '/home/imchugh/Temp/logfiles/aws2nc_'+rundatetime+'.log'    
+log_filename = '/home/imchugh/Temp/logfiles/aws_data_'+rundatetime+'.log'    
 logging.basicConfig(filename=log_filename,
-                    format='%(asctime)s %(levelname)s %(message)s',
-                    datefmt = '%H:%M:%S',
+                    format='%(levelname)s %(message)s',
+                    #datefmt = '%H:%M:%S',
                     level=logging.DEBUG)
 console = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', 
-                              '%H:%M:%S')
+formatter = logging.Formatter('%(levelname)s %(message)s')
+#formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', 
+#                              '%H:%M:%S')
 console.setFormatter(formatter)
 console.setLevel(logging.INFO)
 logging.getLogger('').addHandler(console)
 
 # dummy control file for FixTimeSteps
 cf = {"Options":{"FixTimeStepMethod":"round"}}
+
+logging.info('Run date and time: {}'.format(rundatetime))
 
 try:
     # get bom site details
@@ -319,8 +334,8 @@ try:
     z = zipfile.ZipFile(sio)
     ftp_id_dict = get_file_id_dict(z.namelist())
     missing_from_ftp = ', '.join(list(set(bom_id_list)-set(ftp_id_dict.keys())))
-    print ('The following requested BOM site IDs were missing from ftp site: {0}'
-           .format(missing_from_ftp))
+    logging.warning('The following requested BOM site IDs were missing from ftp site: {0}'
+                    .format(missing_from_ftp))
     # Process the data
     process_data(z, data_path)
     z.close()
