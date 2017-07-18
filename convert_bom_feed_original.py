@@ -105,10 +105,9 @@ def get_stnlp_from_slp(slp, altitude):
     
     return '1013.0'
 
-in_path = '/home/ian/BOM_data/'
-out_path = '/home/ian/BOM_data/converted'
-#f_list = ['bom_station_009053.txt']
-xlname = '/home/ian/Temp/AWS_Locations.xls'
+in_path = '/mnt/OzFlux/AWS/New/Original'
+out_path = '/mnt/OzFlux/AWS/New/Converted'
+xlname = '/mnt/OzFlux/AWS/AWS_Locations.xls'
     
 target_header_list = ['hm',
                       'Station Number',
@@ -172,7 +171,9 @@ for fname in files:
     elevation = elevation_dict[site_id]
     
     in_fpname = os.path.join(in_path, fname)
-    out_fpname = os.path.join(out_path, fname)
+    
+    out_fname = 'HM01X_Data_{}.csv'.format(site_id)
+    out_fpname = os.path.join(out_path, out_fname)
     
     with open(in_fpname) as in_f, open(out_fpname, 'w') as out_f:
         
