@@ -80,49 +80,69 @@ def generate_file_copy(old_fpname):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-# Strip a sorted list from the sites info file
-def get_bom_id_list(bom_sites_info):
-    
-    bom_id_list = []
-    for key in bom_sites_info.keys():
-        for sub_key in bom_sites_info[key].keys():
-            try:
-                int(sub_key)
-                bom_id_list.append(sub_key)
-            except:
-                continue
-    
-    return sorted(list(set(bom_id_list)))
+## Strip a sorted list from the sites info file
+#def get_bom_id_list(bom_sites_info):
+#    
+#    bom_id_list = []
+#    for key in bom_sites_info.keys():
+#        for sub_key in bom_sites_info[key].keys():
+#            try:
+#                int(sub_key)
+#                bom_id_list.append(sub_key)
+#            except:
+#                continue
+#    
+#    return sorted(list(set(bom_id_list)))
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-# get the site information and the AWS stations to use
-def get_bom_site_details(path_to_file, sheet_name):
+## get the site information and the AWS stations to use
+#def get_bom_site_details(path_to_file, sheet_name):
+#
+#    wb = xlrd.open_workbook(path_to_file)
+#    sheet = wb.sheet_by_name(sheet_name)
+#    xl_row = 10
+#    bom_sites_info = {}
+#    for row in range(xl_row,sheet.nrows):
+#        xlrow = sheet.row_values(row)
+#        flux_site_name = str(xlrow[0])
+#        bom_sites_info[flux_site_name] = {}
+#        for i, var in enumerate(['latitude', 'longitude', 'elevation']):
+#            bom_sites_info[flux_site_name][var] = xlrow[i + 1]
+#        for col_idx in [4, 10, 16, 22]:
+#            try:
+#                bom_site_name = xlrow[col_idx]
+#                bom_id = str(int(xlrow[col_idx + 1])).zfill(6)
+#                bom_sites_info[flux_site_name][bom_id] = {'site_name': 
+#                                                          bom_site_name}
+#                for i, var in enumerate(['latitude', 'longitude', 'elevation', 
+#                                         'distance']):
+#                    bom_sites_info[flux_site_name][bom_id][var] = (
+#                        xlrow[col_idx + i + 2])
+#            except:
+#                continue
+#    
+#    return bom_sites_info
+
+#------------------------------------------------------------------------------
+def get_bom_id(path_to_file, sheet_name):
 
     wb = xlrd.open_workbook(path_to_file)
     sheet = wb.sheet_by_name(sheet_name)
-    xl_row = 10
-    bom_sites_info = {}
-    for row in range(xl_row,sheet.nrows):
+    header_row = sheet.row_values(9)
+    idxs = [i for i, var in enumerate(header_row) if 'BoM ID' in  var]
+    start_row = 10
+    var_list = []
+    for row in range(start_row, sheet.nrows):
         xlrow = sheet.row_values(row)
-        flux_site_name = str(xlrow[0])
-        bom_sites_info[flux_site_name] = {}
-        for i, var in enumerate(['latitude', 'longitude', 'elevation']):
-            bom_sites_info[flux_site_name][var] = xlrow[i + 1]
-        for col_idx in [4, 10, 16, 22]:
+        for i in idxs:
             try:
-                bom_site_name = xlrow[col_idx]
-                bom_id = str(int(xlrow[col_idx + 1])).zfill(6)
-                bom_sites_info[flux_site_name][bom_id] = {'site_name': 
-                                                          bom_site_name}
-                for i, var in enumerate(['latitude', 'longitude', 'elevation', 
-                                         'distance']):
-                    bom_sites_info[flux_site_name][bom_id][var] = (
-                        xlrow[col_idx + i + 2])
+                name = str(int(xlrow[i])).zfill(6)
+                if not name in var_list:
+                    var_list.append(name)
             except:
                 continue
-    
-    return bom_sites_info
+    return sorted(var_list)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -132,12 +152,9 @@ def get_date_from_line(line, feed_data = False):
     i = 1 if feed_data else 0
 
     line_list = line.split(',')
-    try:
-        date =  dt.datetime(int(line_list[2 + i]), int(line_list[3 + i]), 
-                            int(line_list[4 + i]), int(line_list[5 + i]), 
-                            int(line_list[6 + i]))
-    except:
-        pdb.set_trace()
+    date =  dt.datetime(int(line_list[2 + i]), int(line_list[3 + i]), 
+                        int(line_list[4 + i]), int(line_list[5 + i]), 
+                        int(line_list[6 + i]))
     return date
 #------------------------------------------------------------------------------
 
@@ -211,8 +228,7 @@ def process_data(z, data_path):
                     check_line_integrity(line)
                     new_line = set_line_order(line, bom_header)
                     bom_dict[date] = new_line
-                except Exception, e:
-                    pdb.set_trace()
+                except:
                     continue
         if len(bom_dict) == 0:
             msg_list.append('No valid data found in ftp file; skipping update...')
@@ -227,23 +243,12 @@ def process_data(z, data_path):
             current_fpname = os.path.join(data_path, fname)
             with open(current_fpname, 'r') as current_f:
                 current_dict = {}
-                try:
-                    for i, line in enumerate(current_f):
-                        if i == 0:
-                            current_header = line
-                        else:
-                            date = get_date_from_line(line)
-                            current_dict[date] = line
-                except Exception, e:
-                    pdb.set_trace()  
-#            try:
-#                assert bom_header == current_header
-#            except AssertionError:
-#                pdb.set_trace()
-#                msg_list.append('Headers of ftp and existing files do not match! '
-#                                'Skipping!')
-#                logging.warning(''.join(msg_list))
-#                continue
+                for i, line in enumerate(current_f):
+                    if i == 0:
+                        current_header = line
+                    else:
+                        date = get_date_from_line(line)
+                        current_dict[date] = line
 
             # Create a date list spanning from the beginning of the existing 
             # file to the end of the ftp file, make a temporary copy in case 
@@ -315,8 +320,6 @@ def set_line_order(line, header):
             value = convert_kmh_2_ms(line_list[line_idx])
         new_list.append(value)
     new_line = ','.join(new_list)
-    if not len(new_line) == 112:
-        pdb.set_trace()
     return new_line
 #------------------------------------------------------------------------------
 
@@ -324,16 +327,26 @@ def set_line_order(line, header):
 def subset_station_list(files_list, target_ID_list):
     
     unq_files_list = sorted(list(set([f for f in files_list if 'Data' in f])))
-    f_names_list = []
-    counter = 0
-    for ID in target_ID_list:
-        for f_name in unq_files_list[counter:]:
-            if ID in f_name:
-                f_names_list.append(f_name)
-                counter = unq_files_list.index(f_name)
-                break
-                
-    return f_names_list
+#    f_names_list = []
+#    counter = 0
+    avail_list = [f.split('_')[2] for f in unq_files_list]
+    common_list = list(set(avail_list).intersection(target_ID_list))
+    file_name_list = []
+    for f in common_list:
+        idx = avail_list.index(f)
+        file_name_list.append(unq_files_list[idx])
+    return file_name_list
+#
+#    for ID in target_ID_list:
+#        for f_name in unq_files_list[counter:]:
+#            if '009053' in f_name and ID == '009053':
+#                pdb.set_trace()
+#            if ID in f_name:
+#                f_names_list.append(f_name)
+#                counter = unq_files_list.index(f_name)
+#                break     
+#    pdb.set_trace()
+#    return f_names_list
 #------------------------------------------------------------------------------
 
 ###############################################################################
@@ -402,8 +415,9 @@ logging.info('Run date and time: {}'.format(rundatetime))
 
 try:
     # get bom site details
-    bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
-    bom_id_list = get_bom_id_list(bom_sites_info)
+#    bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
+#    bom_id_list = get_bom_id_list(bom_sites_info)
+    bom_id_list = get_bom_id(xlname, 'OzFlux')
 
     # Get the available data from the ftp site and cross-check against request
     sio = get_ftp_data(ftp_server, ftp_dir, bom_id_list)
@@ -419,6 +433,7 @@ try:
                      'Successfully collected and processed data for BOM stations '
                      '(see log for details)')
 except Exception, e:
+    pdb.set_trace()
     grunt_email.email_send(mail_recipients, 'BOM data processing status', 
                      'Data processing failed with the following message {0} '
                      .format(e))
