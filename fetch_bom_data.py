@@ -45,6 +45,26 @@ def check_line_integrity(line):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+def check_process_complete(path):
+
+    f_list = os.listdir(path)
+    tmp_list = [f for f in os.listdir(path) if '.tmp' in f]
+    if len(tmp_list) == 0:
+        return
+    csv_list = [f for f in os.listdir(path) if os.path.splitext(f)[0] in f]
+    print ('Warning: the following files were not processed to completion on '
+           'the previous run: {}; reverting to uncorrupted copy!'
+           .format(', '.join(tmp_list)))
+    for f in tmp_list:
+        f_tuple = os.path.splitext(f)
+        old_f_name = os.path.join(path, f)        
+        new_f_name = os.path.join(path, '{}.csv'.format(f_tuple[0]))
+        if os.path.isfile(new_f_name):
+            os.remove(new_f_name)
+        os.rename(old_f_name, new_f_name)
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def generate_date_list(start_date, end_date):
     
     if not start_date < end_date:
@@ -78,51 +98,6 @@ def generate_file_copy(old_fpname):
     shutil.copyfile(old_fpname, new_fpname)
     return new_fpname
 #------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
-## Strip a sorted list from the sites info file
-#def get_bom_id_list(bom_sites_info):
-#    
-#    bom_id_list = []
-#    for key in bom_sites_info.keys():
-#        for sub_key in bom_sites_info[key].keys():
-#            try:
-#                int(sub_key)
-#                bom_id_list.append(sub_key)
-#            except:
-#                continue
-#    
-#    return sorted(list(set(bom_id_list)))
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
-## get the site information and the AWS stations to use
-#def get_bom_site_details(path_to_file, sheet_name):
-#
-#    wb = xlrd.open_workbook(path_to_file)
-#    sheet = wb.sheet_by_name(sheet_name)
-#    xl_row = 10
-#    bom_sites_info = {}
-#    for row in range(xl_row,sheet.nrows):
-#        xlrow = sheet.row_values(row)
-#        flux_site_name = str(xlrow[0])
-#        bom_sites_info[flux_site_name] = {}
-#        for i, var in enumerate(['latitude', 'longitude', 'elevation']):
-#            bom_sites_info[flux_site_name][var] = xlrow[i + 1]
-#        for col_idx in [4, 10, 16, 22]:
-#            try:
-#                bom_site_name = xlrow[col_idx]
-#                bom_id = str(int(xlrow[col_idx + 1])).zfill(6)
-#                bom_sites_info[flux_site_name][bom_id] = {'site_name': 
-#                                                          bom_site_name}
-#                for i, var in enumerate(['latitude', 'longitude', 'elevation', 
-#                                         'distance']):
-#                    bom_sites_info[flux_site_name][bom_id][var] = (
-#                        xlrow[col_idx + i + 2])
-#            except:
-#                continue
-#    
-#    return bom_sites_info
 
 #------------------------------------------------------------------------------
 def get_bom_id(path_to_file, sheet_name):
@@ -327,8 +302,6 @@ def set_line_order(line, header):
 def subset_station_list(files_list, target_ID_list):
     
     unq_files_list = sorted(list(set([f for f in files_list if 'Data' in f])))
-#    f_names_list = []
-#    counter = 0
     avail_list = [f.split('_')[2] for f in unq_files_list]
     common_list = list(set(avail_list).intersection(target_ID_list))
     file_name_list = []
@@ -336,17 +309,6 @@ def subset_station_list(files_list, target_ID_list):
         idx = avail_list.index(f)
         file_name_list.append(unq_files_list[idx])
     return file_name_list
-#
-#    for ID in target_ID_list:
-#        for f_name in unq_files_list[counter:]:
-#            if '009053' in f_name and ID == '009053':
-#                pdb.set_trace()
-#            if ID in f_name:
-#                f_names_list.append(f_name)
-#                counter = unq_files_list.index(f_name)
-#                break     
-#    pdb.set_trace()
-#    return f_names_list
 #------------------------------------------------------------------------------
 
 ###############################################################################
@@ -414,9 +376,10 @@ cf = {"Options":{"FixTimeStepMethod":"round"}}
 logging.info('Run date and time: {}'.format(rundatetime))
 
 try:
+    # Check for failed processing on previous run
+    check_process_complete(data_path)
+
     # get bom site details
-#    bom_sites_info = get_bom_site_details(xlname, 'OzFlux')
-#    bom_id_list = get_bom_id_list(bom_sites_info)
     bom_id_list = get_bom_id(xlname, 'OzFlux')
 
     # Get the available data from the ftp site and cross-check against request
@@ -430,10 +393,9 @@ try:
     process_data(z, data_path)
     z.close()
     grunt_email.email_send(mail_recipients, 'BOM data processing status', 
-                     'Successfully collected and processed data for BOM stations '
-                     '(see log for details)')
+                           'Successfully collected and processed data for BOM stations '
+                           '(see log for details)')
 except Exception, e:
-    pdb.set_trace()
     grunt_email.email_send(mail_recipients, 'BOM data processing status', 
-                     'Data processing failed with the following message {0} '
-                     .format(e))
+                           'Data processing failed with the following message {0} '
+                           .format(e))
