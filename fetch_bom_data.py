@@ -17,6 +17,8 @@ import zipfile
 import datetime as dt
 import copy as cp
 import shutil
+from timezonefinder import TimezoneFinder as tzf
+from pytz import timezone
 
 # Import custom modules
 #import constants as c
@@ -47,11 +49,9 @@ def check_line_integrity(line):
 #------------------------------------------------------------------------------
 def check_process_complete(path):
 
-    f_list = os.listdir(path)
     tmp_list = [f for f in os.listdir(path) if '.tmp' in f]
     if len(tmp_list) == 0:
         return
-    csv_list = [f for f in os.listdir(path) if os.path.splitext(f)[0] in f]
     print ('Warning: the following files were not processed to completion on '
            'the previous run: {}; reverting to uncorrupted copy!'
            .format(', '.join(tmp_list)))
@@ -76,15 +76,22 @@ def generate_date_list(start_date, end_date):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def generate_dummy_line(valid_line, date):
+def generate_dummy_line(valid_line, date, tz):
     
     line_list = valid_line.split(',')
     start_list = ['dd', line_list[1]]
-    date_list = [str(date.year), str(date.month).zfill(2), 
-                 str(date.day).zfill(2), str(date.hour).zfill(2), 
-                 str(date.minute).zfill(2)]
-    data_list = [' ' * len(i) for i in line_list[7: -1]]
-    dummy_list = start_list + date_list + data_list + [line_list[-1]]
+    std_date_list = [str(date.year), str(date.month).zfill(2), 
+                     str(date.day).zfill(2), str(date.hour).zfill(2), 
+                     str(date.minute).zfill(2)]
+    local_datetime = get_local_datetime(date, tz)
+    local_date_list = [str(local_datetime.year), 
+                       str(local_datetime.month).zfill(2), 
+                       str(local_datetime.day).zfill(2), 
+                       str(local_datetime.hour).zfill(2), 
+                       str(local_datetime.minute).zfill(2)]
+    data_list = [' ' * len(i) for i in line_list[12: -1]]
+    dummy_list = (start_list + std_date_list + local_date_list + data_list + 
+                  [line_list[-1]])
     return ','.join(dummy_list)
 #------------------------------------------------------------------------------
 
@@ -118,6 +125,35 @@ def get_bom_id(path_to_file, sheet_name):
             except:
                 continue
     return sorted(var_list)
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_bom_id_dict(file_path):
+    
+    wb = xlrd.open_workbook(file_path)
+    sheet = wb.sheet_by_name('OzFlux')
+    header_row = sheet.row_values(9)
+    idxs = [i for i, var in enumerate(header_row) if 'BoM ID' in  var] 
+    latitude_offset = 1
+    longitude_offset = 2
+    start_row = 10
+    id_dict = {}
+    for row in range(start_row, sheet.nrows):
+        xlrow = sheet.row_values(row)
+        for i in idxs:
+            try:
+                name = str(int(xlrow[i])).zfill(6)
+                if not name in id_dict.keys():
+                    latitude = xlrow[i + latitude_offset]
+                    longitude = xlrow[i + longitude_offset]
+                    tz = tzf().timezone_at(lng = longitude, lat = latitude)
+                    id_dict[name] = {'latitude': latitude,
+                                     'longitude': longitude,
+                                     'time_zone': tz}
+            except:
+                continue
+    return id_dict
+
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -175,6 +211,14 @@ def get_ftp_data(ftp_server, ftp_dir, req_id_list):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+def get_local_datetime(dt_obj, tz_name):
+    
+    tz_obj = timezone(tz_name)
+    dst_offset = tz_obj.dst(dt_obj)
+    return dt_obj + dst_offset 
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def process_data(z, data_path):
     
     ftp_id_dict = get_file_id_dict(z.namelist())
@@ -183,6 +227,8 @@ def process_data(z, data_path):
     logging.info('Unzipping and processing files:')    
 
     for site_id in sorted(ftp_id_dict):
+        
+        tz = bom_id_dict['site_id']['timezone']
         
         # Set up the list for messages to be collated for printing and logging
         msg_list = []
@@ -242,8 +288,9 @@ def process_data(z, data_path):
                     except (KeyError, AssertionError):
                         try:
                             line = bom_dict[date]
-                        except KeyError:
-                            line = generate_dummy_line(line, date)
+                            assert line[:2] == 'hm'
+                        except (KeyError, AssertionError):
+                            line = generate_dummy_line(line, date, tz)
                     out_f.write(line)
             os.remove(temp_fpname)
             msg_list.append('Successfully updated file!')
@@ -380,7 +427,8 @@ try:
     check_process_complete(data_path)
 
     # get bom site details
-    bom_id_list = get_bom_id(xlname, 'OzFlux')
+    bom_id_dict = get_bom_id_dict(xlname)
+    bom_id_list = sorted(bom_id_dict.keys())
 
     # Get the available data from the ftp site and cross-check against request
     sio = get_ftp_data(ftp_server, ftp_dir, bom_id_list)
