@@ -52,9 +52,9 @@ def check_process_complete(path):
     tmp_list = [f for f in os.listdir(path) if '.tmp' in f]
     if len(tmp_list) == 0:
         return
-    print ('Warning: the following files were not processed to completion on '
-           'the previous run: {}; reverting to uncorrupted copy!'
-           .format(', '.join(tmp_list)))
+    logging.warning('The following files were not processed to completion on '
+                    'the previous run: {}; reverting to uncorrupted copy!'
+                    .format(', '.join(tmp_list)))
     for f in tmp_list:
         f_tuple = os.path.splitext(f)
         old_f_name = os.path.join(path, f)        
@@ -80,17 +80,17 @@ def generate_dummy_line(valid_line, date, tz):
     
     line_list = valid_line.split(',')
     start_list = ['dd', line_list[1]]
-    std_date_list = [str(date.year), str(date.month).zfill(2), 
-                     str(date.day).zfill(2), str(date.hour).zfill(2), 
-                     str(date.minute).zfill(2)]
     local_datetime = get_local_datetime(date, tz)
     local_date_list = [str(local_datetime.year), 
                        str(local_datetime.month).zfill(2), 
                        str(local_datetime.day).zfill(2), 
                        str(local_datetime.hour).zfill(2), 
                        str(local_datetime.minute).zfill(2)]
+    std_date_list = [str(date.year), str(date.month).zfill(2), 
+                     str(date.day).zfill(2), str(date.hour).zfill(2), 
+                     str(date.minute).zfill(2)]
     data_list = [' ' * len(i) for i in line_list[12: -1]]
-    dummy_list = (start_list + std_date_list + local_date_list + data_list + 
+    dummy_list = (start_list + local_date_list + std_date_list + data_list + 
                   [line_list[-1]])
     return ','.join(dummy_list)
 #------------------------------------------------------------------------------
@@ -163,9 +163,9 @@ def get_date_from_line(line, feed_data = False):
     i = 1 if feed_data else 0
 
     line_list = line.split(',')
-    date =  dt.datetime(int(line_list[2 + i]), int(line_list[3 + i]), 
-                        int(line_list[4 + i]), int(line_list[5 + i]), 
-                        int(line_list[6 + i]))
+    date =  dt.datetime(int(line_list[7 + i]), int(line_list[8 + i]), 
+                        int(line_list[9 + i]), int(line_list[10 + i]), 
+                        int(line_list[11 + i]))
     return date
 #------------------------------------------------------------------------------
 
@@ -214,7 +214,13 @@ def get_ftp_data(ftp_server, ftp_dir, req_id_list):
 def get_local_datetime(dt_obj, tz_name):
     
     tz_obj = timezone(tz_name)
-    dst_offset = tz_obj.dst(dt_obj)
+    try:
+        dst_offset = tz_obj.dst(dt_obj)
+        prev_offset = tz_obj.dst(dt_obj - dt.timedelta(seconds = 3600))
+        if dst_offset != prev_offset:
+            pdb.set_trace()
+    except:
+        dst_offset = tz_obj.dst(dt_obj + dt.timedelta(seconds = 3600))
     return dt_obj + dst_offset 
 #------------------------------------------------------------------------------
 
@@ -228,7 +234,7 @@ def process_data(z, data_path):
 
     for site_id in sorted(ftp_id_dict):
         
-        tz = bom_id_dict['site_id']['timezone']
+        tz = bom_id_dict[site_id]['time_zone']
         
         # Set up the list for messages to be collated for printing and logging
         msg_list = []
@@ -268,7 +274,10 @@ def process_data(z, data_path):
                     if i == 0:
                         current_header = line
                     else:
-                        date = get_date_from_line(line)
+                        try:
+                            date = get_date_from_line(line)
+                        except:
+                            continue
                         current_dict[date] = line
 
             # Create a date list spanning from the beginning of the existing 
@@ -440,10 +449,12 @@ try:
     # Process the data
     process_data(z, data_path)
     z.close()
-    grunt_email.email_send(mail_recipients, 'BOM data processing status', 
-                           'Successfully collected and processed data for BOM stations '
-                           '(see log for details)')
+
+    msg = ('Successfully collected and processed data for BOM stations - '
+           '(see log for details)')
+    logging.info(msg)
+    grunt_email.email_send(mail_recipients, 'BOM data processing status', msg)
 except Exception, e:
-    grunt_email.email_send(mail_recipients, 'BOM data processing status', 
-                           'Data processing failed with the following message {0} '
-                           .format(e))
+    msg = ('Data processing failed with the following message {0} '.format(e))
+    logging.info(msg)
+    grunt_email.email_send(mail_recipients, 'BOM data processing status', msg)
