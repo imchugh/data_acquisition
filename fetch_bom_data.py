@@ -1,31 +1,17 @@
 # Import standard modules
-import sys
-sys.path.append('/home/ian/OzFlux/OzFluxQC/scripts')
-import csv
-import datetime
-import glob
+import datetime as dt
+import ftplib
 import logging
-import netCDF4
-import numpy
 import os
+import shutil
+import StringIO
 import time
 import xlrd
-import pdb
-import ftplib
-import StringIO
 import zipfile
-import datetime as dt
-import copy as cp
-import shutil
-from timezonefinder import TimezoneFinder as tzf
 from pytz import timezone
+from timezonefinder import TimezoneFinder as tzf
 
 # Import custom modules
-#import constants as c
-#import meteorologicalfunctions as mf
-#import qcio
-#import qcts
-#import qcutils
 import grunt_email
 
 ###############################################################################
@@ -107,27 +93,6 @@ def generate_file_copy(old_fpname):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_bom_id(path_to_file, sheet_name):
-
-    wb = xlrd.open_workbook(path_to_file)
-    sheet = wb.sheet_by_name(sheet_name)
-    header_row = sheet.row_values(9)
-    idxs = [i for i, var in enumerate(header_row) if 'BoM ID' in  var]
-    start_row = 10
-    var_list = []
-    for row in range(start_row, sheet.nrows):
-        xlrow = sheet.row_values(row)
-        for i in idxs:
-            try:
-                name = str(int(xlrow[i])).zfill(6)
-                if not name in var_list:
-                    var_list.append(name)
-            except:
-                continue
-    return sorted(var_list)
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
 def get_bom_id_dict(file_path):
     
     wb = xlrd.open_workbook(file_path)
@@ -153,7 +118,6 @@ def get_bom_id_dict(file_path):
             except:
                 continue
     return id_dict
-
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -217,8 +181,6 @@ def get_local_datetime(dt_obj, tz_name):
     try:
         dst_offset = tz_obj.dst(dt_obj)
         prev_offset = tz_obj.dst(dt_obj - dt.timedelta(seconds = 3600))
-        if dst_offset != prev_offset:
-            pdb.set_trace()
     except:
         dst_offset = tz_obj.dst(dt_obj + dt.timedelta(seconds = 3600))
     return dt_obj + dst_offset 
@@ -376,6 +338,7 @@ ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 xlname = "/mnt/OzFlux/AWS/AWS_Locations.xls"
 data_path = "/mnt/OzFlux/AWS/Test/"
+logfile_path = "/mnt/OzFlux/AWS/Logfiles/"
 mail_recipients = ['ian_mchugh@fastmail.com']
 
 header_list = ['hm',
@@ -411,9 +374,8 @@ header_list = ['hm',
 
 # Set up logging
 t = time.localtime()
-rundatetime = (datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5])
-               .strftime("%Y%m%d%H%M"))
-log_filename = '/home/imchugh/Temp/logfiles/aws_data_'+rundatetime+'.log'    
+rundatetime = (dt.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M"))
+log_filename = os.path.join(logfile_path, 'aws_data_{}.log'.format(rundatetime))    
 logging.basicConfig(filename=log_filename,
                     format='%(levelname)s %(message)s',
                     #datefmt = '%H:%M:%S',
@@ -450,11 +412,10 @@ try:
     process_data(z, data_path)
     z.close()
 
-    msg = ('Successfully collected and processed data for BOM stations - '
-           '(see log for details)')
+    msg = 'Successfully collected and processed data for BOM stations!'
     logging.info(msg)
     grunt_email.email_send(mail_recipients, 'BOM data processing status', msg)
 except Exception, e:
-    msg = ('Data processing failed with the following message {0} '.format(e))
+    msg = ('Data processing failed with the following message {0}'.format(e))
     logging.info(msg)
     grunt_email.email_send(mail_recipients, 'BOM data processing status', msg)
