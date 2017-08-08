@@ -339,7 +339,7 @@ ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 xlname = "/mnt/OzFlux/AWS/AWS_Locations.xls"
 data_path = "/mnt/OzFlux/AWS/Test/"
 logfile_path = "/mnt/OzFlux/AWS/Logfiles/"
-mail_recipients = ['ian_mchugh@fastmail.com']
+mail_recipients = ['ian.mchugh@monash.edu']
 
 header_list = ['hm',
                'Station Number',
