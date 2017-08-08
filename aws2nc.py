@@ -17,13 +17,14 @@ import meteorologicalfunctions as mf
 import qcio
 import qcts
 import qcutils
+import aws_averageto60minutes as downsample_aws
 
 mail_recipients = ['ian.mchugh@monash.edu']
 
 try:
     t = time.localtime()
     rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-    log_filename = '../logfiles/aws2mc_'+rundatetime+'.log'
+    log_filename = '../../Logfiles/aws2nc_'+rundatetime+'.log'
     logging.basicConfig(filename=log_filename,
                         format='%(asctime)s %(levelname)s %(message)s',
                         datefmt = '%H:%M:%S',
@@ -38,7 +39,7 @@ try:
     cf = {"Options":{"FixTimeStepMethod":"round"}}
     
     # get the site information and the AWS stations to use
-    xlname = "/mnt/OzFlux/AWS/AWS_Locations.xls"
+    xlname = "/mnt/OzFlux/site_master_file.xls"
     wb = xlrd.open_workbook(xlname)
     sheet = wb.sheet_by_name("OzFlux")
     xl_row = 10
@@ -50,7 +51,7 @@ try:
         bom_sites_info[xlrow[0]]["latitude"] = xlrow[1]
         bom_sites_info[xlrow[0]]["longitude"] = xlrow[2]
         bom_sites_info[xlrow[0]]["elevation"] = xlrow[3]
-        for i in [4,10,16,22]:
+        for i in [6,12,18,24]:
             if xlrow[i]!="":
                 bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))] = {}
                 bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["site_name"] = xlrow[i]
@@ -58,7 +59,7 @@ try:
                 bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["longitude"] = xlrow[i+3]
                 bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["elevation"] = xlrow[i+4]
                 bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["distance"] = xlrow[i+5]
-    
+
     in_path = "/mnt/OzFlux/AWS/Test/"
     out_path = "/mnt/OzFlux/Sites/"
     in_filename = in_path+"HM01X_Data*.csv"
@@ -309,18 +310,20 @@ try:
             # ... and rename the old file to preserve it
             os.rename(ncname,newFileName)
             # now the old file will not be overwritten
-    #    pdb.set_trace()
         ncfile = qcio.nc_open_write(ncname)
         qcio.nc_write_series(ncfile,ds_all,ndims=1)
         logging.info("Finished site: "+site_name)
+
+    logging.info('Downsampling to 1 hour time step for relevant sites...')
+    downsample_aws.main()
     
     print "aws2nc: All done"
     msg = ('Successfully processed BOM data and wrote to site netCDF AWS files'
            '(see log for details)')
     grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)
 except Exception, e:
-    msg = ('Data processing failed with the following message {}'.format(e)
-           '(see log for details)')
+    msg = ('Data processing failed with the following message: {}; '
+           '(see log for details)'.format(e))
     print msg
     grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)
     
