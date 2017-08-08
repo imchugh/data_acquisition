@@ -105,18 +105,18 @@ def func(aws_name):
 ###############################################################################
 # Main program                                                                #
 ###############################################################################
+def main():
+    path_to_master_file = '/mnt/OzFlux/site_master_file.xls'
+    path_to_site_files = '/mnt/OzFlux/Sites/{}/Data/AWS'
 
-path_to_master_file = '/mnt/OzFlux/site_master_file.xls'
-path_to_site_files = '/mnt/OzFlux/Sites/{}/Data/AWS'
+    wb = xlrd.open_workbook(path_to_master_file)
+    sheet = wb.sheet_by_name('OzFlux')
+    site_list = sheet.col_values(0, 10)
+    time_step_list = sheet.col_values(4, 10)
+    hr_sites_list = [''.join(site_list[i].split(' ')) for i, time_step 
+                     in enumerate(time_step_list) if time_step == 60]
 
-wb = xlrd.open_workbook(path_to_master_file)
-sheet = wb.sheet_by_name('OzFlux')
-site_list = sheet.col_values(0, 10)
-time_step_list = sheet.col_values(4, 10)
-hr_sites_list = [''.join(site_list[i].split(' ')) for i, time_step 
-                 in enumerate(time_step_list) if time_step == 60]
-
-for site in hr_sites_list:
+    for site in hr_sites_list:
 
 #    work_list = []
 #    archive_dict = {}
@@ -142,18 +142,18 @@ for site in hr_sites_list:
 #    print ('The oldest file is {0} and the newest file is {1}'
 #           .format(oldest_f, newest_f))
 
-    print 'Running timestep conversion for {} site:'.format(site)
+        print 'Running timestep conversion for {} site:'.format(site)
 
-    path = path_to_site_files.format(site)
-    current_f = '{}_AWS.nc'.format(site)
-
-    ncobj = netCDF4.Dataset(os.path.join(path, current_f))
-    attr_dict = ncobj.__dict__
-    if int(attr_dict['time_step']) == 60:
-        print 'Conversion already complete!'
-    elif int(attr_dict['time_step']) == 30:
-        print 'Conversion required! Starting now...'
-        func(target)
-        print 'Conversion complete!'
+        path = path_to_site_files.format(site)
+        current_f = '{}_AWS.nc'.format(site)
+        target = os.path.join(path, current_f)
+        ncobj = netCDF4.Dataset(target)
+        attr_dict = ncobj.__dict__
+        if int(attr_dict['time_step']) == 60:
+            print 'Conversion already complete!'
+        elif int(attr_dict['time_step']) == 30:
+            print 'Conversion required! Starting now...'
+            func(target)
+            print 'Conversion complete!'
 
 ###############################################################################
