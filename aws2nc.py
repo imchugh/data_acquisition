@@ -5,6 +5,7 @@ import logging
 import netCDF4
 import numpy
 import os
+import pdb
 import sys
 import time
 import xlrd
@@ -17,65 +18,154 @@ import meteorologicalfunctions as mf
 import qcio
 import qcts
 import qcutils
-import aws_averageto60minutes as downsample_aws
 
 mail_recipients = ['ian.mchugh@monash.edu']
 
-try:
-    t = time.localtime()
-    rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-    log_filename = '../../Logfiles/aws2nc_'+rundatetime+'.log'
-    logging.basicConfig(filename=log_filename,
-                        format='%(asctime)s %(levelname)s %(message)s',
-                        datefmt = '%H:%M:%S',
-                        level=logging.DEBUG)
-    console = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', '%H:%M:%S')
-    console.setFormatter(formatter)
-    console.setLevel(logging.INFO)
-    logging.getLogger('').addHandler(console)
+###############################################################################
+# Functions                                                                   #
+###############################################################################
+
+#------------------------------------------------------------------------------
+
+def downsample_aws(in_path, master_file_pathname):
     
+    wb = xlrd.open_workbook(master_file_pathname)
+    sheet = wb.sheet_by_name('Active')
+    site_list = sheet.col_values(0, 10)
+    time_step_list = sheet.col_values(8, 10)
+    sites_list = [''.join(site_list[i].split(' ')) for i, time_step 
+                  in enumerate(time_step_list) if time_step == 60]
+
+    for site in sites_list:
+
+        logging.info('Running timestep conversion for {} site:'.format(site))
+        path = os.path.join(in_path, site, "Data/AWS")
+        current_f = '{}_AWS.nc'.format(site)
+        aws_name = os.path.join(path, current_f)
+        ncobj = netCDF4.Dataset(aws_name)
+        attr_dict = ncobj.__dict__
+        if int(attr_dict['time_step']) == 60:
+            logging.info('Conversion already complete!')
+            continue
+        logging.info('Conversion required! Starting now...')
+        ds_aws_30minute = qcio.nc_read_series(aws_name)
+        has_gaps = qcutils.CheckTimeStep(ds_aws_30minute)
+        if has_gaps:
+            print "Problems found with time step"
+            qcutils.FixTimeStep(ds_aws_30minute)
+            qcutils.get_ymdhmsfromdatetime(ds_aws_30minute)
+        dt_aws_30minute = ds_aws_30minute.series["DateTime"]["Data"]
+        ddt=[dt_aws_30minute[i+1]-dt_aws_30minute[i] for i in range(0,len(dt_aws_30minute)-1)]
+        print "Minimum time step is",min(ddt)," Maximum time step is",max(ddt)
+        
+        dt_aws_30minute = ds_aws_30minute.series["DateTime"]["Data"]
+        start_date = dt_aws_30minute[0]
+        end_date = dt_aws_30minute[-1]
+        si_wholehour = qcutils.GetDateIndex(dt_aws_30minute,str(start_date),ts=30,match="startnexthour")
+        ei_wholehour = qcutils.GetDateIndex(dt_aws_30minute,str(end_date),ts=30,match="endprevioushour")
+        start_date = dt_aws_30minute[si_wholehour]
+        end_date = dt_aws_30minute[ei_wholehour]
+        dt_aws_30minute_array = numpy.array(dt_aws_30minute[si_wholehour:ei_wholehour+1])
+        nRecs_30minute = len(dt_aws_30minute_array)
+        dt_aws_2d = numpy.reshape(dt_aws_30minute_array,(nRecs_30minute/2,2))
+        dt_aws_60minute = list(dt_aws_2d[:,1])
+        nRecs_60minute = len(dt_aws_60minute)   
+        series_list = ds_aws_30minute.series.keys()
+        for item in ["DateTime","Ddd","Day","Minute","xlDateTime","Hour","time","Month","Second","Year"]:
+            if item in series_list: series_list.remove(item)
+            
+            # get the 60 minute data structure
+            ds_aws_60minute = qcio.DataStructure()
+            # get the global attributes
+            for item in ds_aws_30minute.globalattributes.keys():
+                ds_aws_60minute.globalattributes[item] = ds_aws_30minute.globalattributes[item]
+            # overwrite with 60 minute values as appropriate
+            ds_aws_60minute.globalattributes["nc_nrecs"] = str(nRecs_60minute)
+            ds_aws_60minute.globalattributes["time_step"] = str(60)
+            # put the Python datetime into the data structure
+            ds_aws_60minute.series["DateTime"] = {}
+            ds_aws_60minute.series["DateTime"]["Data"] = dt_aws_60minute
+            ds_aws_60minute.series["DateTime"]["Flag"] = numpy.zeros(nRecs_60minute,dtype=numpy.int32)
+            ds_aws_60minute.series["DateTime"]["Attr"] = qcutils.MakeAttributeDictionary(long_name="DateTime in local time zone",units="None")
+            # add the Excel datetime, year, month etc
+            qcutils.get_xldatefromdatetime(ds_aws_60minute)
+            qcutils.get_ymdhmsfromdatetime(ds_aws_60minute)
+            # loop over the series and take the average (every thing but Precip) or sum (Precip)
+            for item in series_list:
+                if "Precip" in item:
+                    data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                    data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
+                    flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
+                    data_60minute = numpy.ma.sum(data_2d,axis=1)
+                    flag_60minute = numpy.ma.max(flag_2d,axis=1)
+                    qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
+                elif "Wd" in item:
+                    Ws_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                    Wd_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                    U_30minute,V_30minute = qcutils.convert_WsWdtoUV(Ws_30minute,Wd_30minute)
+                    U_2d = numpy.reshape(U_30minute,(nRecs_30minute/2,2))
+                    V_2d = numpy.reshape(V_30minute,(nRecs_30minute/2,2))
+                    flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
+                    U_60minute = numpy.ma.sum(U_2d,axis=1)
+                    V_60minute = numpy.ma.sum(V_2d,axis=1)
+                    Ws_60minute,Wd_60minute = qcutils.convert_UVtoWsWd(U_60minute,V_60minute)
+                    flag_60minute = numpy.ma.max(flag_2d,axis=1)
+                    qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute,Flag=flag_60minute,Attr=attr)
+                else:
+                    data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                    data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
+                    flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
+                    data_60minute = numpy.ma.average(data_2d,axis=1)
+                    flag_60minute = numpy.ma.max(flag_2d,axis=1)
+                    qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
+
+        # write out the 60 minute data
+        aws_30min_name = aws_name.replace('.nc','_30minute.nc')
+        if os.path.isfile(aws_30min_name):
+            os.remove(aws_30min_name)
+        os.rename(aws_name, aws_30min_name) 
+        ncfile = qcio.nc_open_write(aws_name)
+        qcio.nc_write_series(ncfile, ds_aws_60minute, ndims=1)
+        print 'Conversion complete!'
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+
+def aws_to_nc(in_path, out_path, master_file_pathname):
+       
     # dummy control file for FixTimeSteps
-    cf = {"Options":{"FixTimeStepMethod":"round"}}
+#    cf = {"Options":{"FixTimeStepMethod":"round"}}
     
     # get the site information and the AWS stations to use
-    xlname = "/mnt/OzFlux/site_master_file.xls"
-    wb = xlrd.open_workbook(xlname)
-    sheet = wb.sheet_by_name("OzFlux")
+    wb = xlrd.open_workbook(master_file_pathname)
+    sheet = wb.sheet_by_name("Active")
     xl_row = 10
-    xl_col = 0
     bom_sites_info = {}
     for n in range(xl_row,sheet.nrows):
         xlrow = sheet.row_values(n)
-        bom_sites_info[str(xlrow[0])] = {}
-        bom_sites_info[xlrow[0]]["latitude"] = xlrow[1]
-        bom_sites_info[xlrow[0]]["longitude"] = xlrow[2]
-        bom_sites_info[xlrow[0]]["elevation"] = xlrow[3]
-        for i in [6,12,18,24]:
+        ozflux_site_name = str(xlrow[0])
+        bom_sites_info[ozflux_site_name] = {}
+        bom_sites_info[ozflux_site_name]["latitude"] = xlrow[4]
+        bom_sites_info[ozflux_site_name]["longitude"] = xlrow[5]
+        bom_sites_info[ozflux_site_name]["elevation"] = xlrow[6]
+        for i in [9,16,23,30]:
             if xlrow[i]!="":
-                bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))] = {}
-                bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["site_name"] = xlrow[i]
-                bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["latitude"] = xlrow[i+2]
-                bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["longitude"] = xlrow[i+3]
-                bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["elevation"] = xlrow[i+4]
-                bom_sites_info[str(xlrow[0])][str(int(xlrow[i+1]))]["distance"] = xlrow[i+5]
+                bom_id = str(int(xlrow[i+1]))
+                bom_sites_info[ozflux_site_name][bom_id] = {}
+                bom_sites_info[ozflux_site_name][bom_id]["site_name"] = xlrow[i]
+                bom_sites_info[ozflux_site_name][bom_id]["latitude"] = xlrow[i+3]
+                bom_sites_info[ozflux_site_name][bom_id]["longitude"] = xlrow[i+4]
+                bom_sites_info[ozflux_site_name][bom_id]["elevation"] = xlrow[i+5]
+                bom_sites_info[ozflux_site_name][bom_id]["distance"] = xlrow[i+6]
 
-    in_path = "/mnt/OzFlux/AWS/Test/"
-    out_path = "/mnt/OzFlux/Sites/"
     in_filename = in_path+"HM01X_Data*.csv"
     file_list = sorted(glob.glob(in_filename))
-    
     site_list = bom_sites_info.keys()
-    #site_list = ["Tumbarumba"]
-    #site_list = ["Great Western Woodlands"]
-    #site_list = ["Otway"]
     for site_name in sorted(site_list):
         logging.info("Starting site: "+site_name)
         sname = site_name.replace(" ","")
-        ncname = out_path + sname + "/Data/AWS/" + sname + "_AWS.nc"
-    #    print ncname
-    #    pdb.set_trace()
-    #    ncname = os.path.join(out_path,sname,"/Data/AWS/",sname+"_AWS.nc")
+        site_out_path = os.path.join(out_path, sname, "Data/AWS")
+        ncname = os.path.join(site_out_path, "{}_AWS.nc".format(sname))
         site_latitude = bom_sites_info[site_name]["latitude"]
         site_longitude = bom_sites_info[site_name]["longitude"]
         site_elevation = bom_sites_info[site_name]["elevation"]
@@ -300,6 +390,18 @@ try:
         # OMG, the user may want to overwrite the old data ...
         if os.path.exists(ncname):
             # ... but we will save them from themselves!
+            fnames_list = os.listdir(site_out_path)
+            suffix_date_dict = {}
+            for fname in fnames_list:
+                suffix = os.path.splitext(fname)[0].split('_')[-1]
+                try:
+                    date = datetime.datetime.strptime(suffix, "%Y%m%d%H%M")
+                    suffix_date_dict[date] = os.path.join(site_out_path, fname)
+                except:
+                    continue
+            remove_list = sorted(suffix_date_dict.keys())
+            for date in remove_list[:-1]:
+                os.remove(suffix_date_dict[date])
             t = time.localtime()
             rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
             new_ext = "_"+rundatetime+".nc"
@@ -313,10 +415,35 @@ try:
         ncfile = qcio.nc_open_write(ncname)
         qcio.nc_write_series(ncfile,ds_all,ndims=1)
         logging.info("Finished site: "+site_name)
+#------------------------------------------------------------------------------
 
+###############################################################################
+# Main code                                                                   #
+###############################################################################
+
+# Set up logging    
+t = time.localtime()
+rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
+log_filename = '../../Logfiles/aws2nc_'+rundatetime+'.log'
+logging.basicConfig(filename=log_filename,
+                    format='%(asctime)s %(levelname)s %(message)s',
+                    datefmt = '%H:%M:%S',
+                    level=logging.DEBUG)
+console = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', '%H:%M:%S')
+console.setFormatter(formatter)
+console.setLevel(logging.INFO)
+logging.getLogger('').addHandler(console)
+
+# Basic configurations
+in_path = "/mnt/OzFlux/AWS/Test/"
+out_path = "/mnt/OzFlux/Sites/"
+master_file_pathname = "/mnt/OzFlux/Sites/site_master.xls"
+
+try:
+    aws_to_nc(in_path, out_path, master_file_pathname)
     logging.info('Downsampling to 1 hour time step for relevant sites...')
-    downsample_aws.main()
-    
+    downsample_aws(out_path, master_file_pathname)
     print "aws2nc: All done"
     msg = ('Successfully processed BOM data and wrote to site netCDF AWS files'
            '(see log for details)')
@@ -325,5 +452,5 @@ except Exception, e:
     msg = ('Data processing failed with the following message: {}; '
            '(see log for details)'.format(e))
     print msg
-    grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)
+    grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)    
     
