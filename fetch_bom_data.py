@@ -3,6 +3,7 @@ import datetime as dt
 import ftplib
 import logging
 import os
+import pdb
 import shutil
 import StringIO
 import time
@@ -96,11 +97,11 @@ def generate_file_copy(old_fpname):
 def get_bom_id_dict(file_path):
     
     wb = xlrd.open_workbook(file_path)
-    sheet = wb.sheet_by_name('OzFlux')
+    sheet = wb.sheet_by_name('Active')
     header_row = sheet.row_values(9)
-    idxs = [i for i, var in enumerate(header_row) if 'BoM ID' in  var] 
-    latitude_offset = 1
-    longitude_offset = 2
+    idxs = [i for i, var in enumerate(header_row) if 'BoM_ID' in  var] 
+    latitude_offset = 2
+    longitude_offset = 3
     start_row = 10
     id_dict = {}
     for row in range(start_row, sheet.nrows):
@@ -115,7 +116,7 @@ def get_bom_id_dict(file_path):
                     id_dict[name] = {'latitude': latitude,
                                      'longitude': longitude,
                                      'time_zone': tz}
-            except:
+            except Exception,e:
                 continue
     return id_dict
 #------------------------------------------------------------------------------
@@ -336,7 +337,7 @@ def subset_station_list(files_list, target_ID_list):
 # Set stuff up
 ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
-xlname = "/mnt/OzFlux/AWS/AWS_Locations.xls"
+xlname = '/mnt/OzFlux/Sites/site_master.xls' #"/mnt/OzFlux/AWS/AWS_Locations.xls"
 data_path = "/mnt/OzFlux/AWS/Test/"
 logfile_path = "/mnt/OzFlux/AWS/Logfiles/"
 mail_recipients = ['ian.mchugh@monash.edu']
