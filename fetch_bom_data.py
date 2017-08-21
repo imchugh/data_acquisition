@@ -98,27 +98,27 @@ def get_bom_id_dict(file_path):
     
     wb = xlrd.open_workbook(file_path)
     sheet = wb.sheet_by_name('Active')
-    header_row = sheet.row_values(9)
-    idxs = [i for i, var in enumerate(header_row) if 'BoM_ID' in  var] 
-    latitude_offset = 2
-    longitude_offset = 3
+    header_row = 9
+    header_list = sheet.row_values(header_row)
     start_row = 10
     id_dict = {}
-    for row in range(start_row, sheet.nrows):
-        xlrow = sheet.row_values(row)
-        for i in idxs:
+    for row_num in range(start_row, sheet.nrows):
+        this_row = sheet.row_values(row_num)
+        for i in range(1, 5):
+            stn_col_idx = header_list.index('BoM_ID_{}'.format(str(i)))
+            lat_col_idx = header_list.index('Latitude_{}'.format(str(i)))
+            lon_col_idx = header_list.index('Longitude_{}'.format(str(i)))
             try:
-                name = str(int(xlrow[i])).zfill(6)
-                if not name in id_dict.keys():
-                    latitude = xlrow[i + latitude_offset]
-                    longitude = xlrow[i + longitude_offset]
-                    tz = tzf().timezone_at(lng = longitude, lat = latitude)
-                    id_dict[name] = {'latitude': latitude,
-                                     'longitude': longitude,
-                                     'time_zone': tz}
-            except Exception,e:
+                bom_id = str(int(this_row[stn_col_idx])).zfill(6)
+                id_dict[bom_id] = {}
+                latitude = this_row[lat_col_idx]
+                longitude = this_row[lon_col_idx]
+                tz = tzf().timezone_at(lng = longitude, lat = latitude)
+                id_dict[bom_id]['latitude'] = latitude
+                id_dict[bom_id]['longitude'] = longitude
+                id_dict[bom_id]['time_zone'] = tz
+            except:
                 continue
-    return id_dict
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
