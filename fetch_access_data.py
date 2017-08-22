@@ -41,7 +41,7 @@ if not os.path.exists(ym):
 #wget = '/usr/bin/wget -nv -N -nH -np -a Download.log -P ' + ym + ' -0 ' + tmpfile + ' '
 wget = '/usr/bin/wget -nv -a Download.log -O ' + tmpfile + ' '
 
-file_path = '/home/ian/Temp/site_master.xls'
+file_path = '/mnt/OzFlux/Sites/site_master.xls'
 wb = xlrd.open_workbook(file_path)
 sheet = wb.sheet_by_name('Active')
 header_row = 9
