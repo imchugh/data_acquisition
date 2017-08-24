@@ -569,19 +569,29 @@ def makecontroldict(base_dir, yearmonth, master_file_path):
     # Get the data from the master file and initialise location list for timezone
     wb = xlrd.open_workbook(master_file_path)
     sheet = wb.sheet_by_name('Active')
-    site_list = [str(site.value) for site in sheet.col(0, 10)]
-    lat_list = [site.value for site in sheet.col(4, 10)]
-    lon_list = [site.value for site in sheet.col(5, 10)]
+    header_row = 9
+    header_list = sheet.row_values(header_row)
+    site_idx = header_list.index('Site')
+    site_list = [str(site.value) for site in sheet.col(site_idx, 10)]
+    lat_idx = header_list.index('Latitude')
+    lat_list = [lat.value for lat in sheet.col(lat_idx, 10)]
+    lon_idx = header_list.index('Longitude')
+    lon_list = [lon.value for lon in sheet.col(lon_idx, 10)]
+    step_idx = header_list.index('Time step')
+    step_list = [step.value for step in sheet.col(step_idx, 10)]
     loc_d = {site[0]: site[1:] for site in zip(site_list, lat_list, lon_list)}
+    step_d = dict(zip(site_list, step_list))
     
     # Iterate over sites
     for site_name in site_list:
            
         this_dict = {}
         
+        # Do stuff that requires original name before aliasing
         site_loc = loc_d[site_name]
         this_dict['site_timezone'] = tzf().timezone_at(lng = site_loc[1], 
                                                        lat = site_loc[0])
+        site_timestep = step_d[site_name]
         
         try:
             this_alias_dict = site_alias_dict[site_name]
@@ -598,7 +608,7 @@ def makecontroldict(base_dir, yearmonth, master_file_path):
                                                                yearmonth)
         this_dict['in_filepath'] = os.path.join(base_dir, yearmonth + '/')
         this_dict['out_filepath'] = os.path.join(base_dir, 'monthly', yearmonth + '/')
-        this_dict['interpolate'] = 'True'
+        this_dict['interpolate'] = 'True' if site_timestep == 30 else False
         this_dict['site_name'] = site_name
         
         master_dict['Sites'][dict_name] = this_dict
