@@ -120,12 +120,16 @@ def set_globalattributes(ds_60minutes,info):
     ds_60minutes.globalattributes["nc_level"] = "L1"
     return
 
-def get_accessdata(cf,ds_60minutes,f,info):
+def get_accessdata(ds_60minutes,f,info):
+
+    # list of variables to process
+    var_dict = makevardict()
+    var_list = var_dict.keys()
+
             # latitude and longitude, chose central pixel of 3x3 grid
     ds_60minutes.globalattributes["latitude"] = f.variables["lat"][1]
     ds_60minutes.globalattributes["longitude"] = f.variables["lon"][1]
-    # list of variables to process
-    var_list = var_dict.keys()
+
     # get a series of Python datetimes and put this into the data structure
     valid_date = f.variables["valid_date"][:]
     nRecs = len(valid_date)
@@ -163,10 +167,9 @@ def get_accessdata(cf,ds_60minutes,f,info):
     attr = qcutils.MakeAttributeDictionary(long_name='UTC hour')
     qcutils.CreateSeries(ds_60minutes,'Hr_UTC',hr_utc,Flag=flag_60minutes,Attr=attr)
     # now loop over the variables listed in the control file
-    pdb.set_trace()
     for label in var_list:
         # get the name of the variable in the ACCESS file
-        access_name = qcutils.get_keyvaluefromcf(cf,["Variables",label],"access_name",default=label)
+        access_name = var_dict[label]#qcutils.get_keyvaluefromcf(cf,["Variables",label],"access_name",default=label)
         # warn the user if the variable not found
         if access_name not in f.variables.keys():
             msg = "Requested variable "+access_name
@@ -491,7 +494,10 @@ def get_instantaneous_precip60(ds_60minutes):
             attr["units"] = "mm/60 minutes"
             qcutils.CreateSeries(ds_60minutes,label,precip,Flag=flag,Attr=attr)
 
-def access_read_mfiles2(file_list,var_list=[]):
+def access_read_mfiles2(file_list):
+
+    var_dict = makevardict()
+    var_list = var_dict.keys()
     f = ACCESSData()
     # check that we have a list of files to process
     if len(file_list)==0:
@@ -529,14 +535,15 @@ def access_read_mfiles2(file_list,var_list=[]):
             if gattr not in f.globalattr:
                 f.globalattr[gattr] = getattr(ncfile,gattr)
         # if no variable list was passed to this routine, use all variables
-        if len(var_list)==0:
-            var_list=ncfile.variables.keys()
+        #if len(var_list)==0:
+        #    var_list=ncfile.variables.keys()
         # load the data into the data structure
         for var in var_list:
-            if var == 'lat':
-                pdb.set_trace()
             # get the name of the variable in the ACCESS file
-            access_name = qcutils.get_keyvaluefromcf(cf,["Variables",var],"access_name",default=var)
+            try:
+                access_name = var_dict[var] #qcutils.get_keyvaluefromcf(cf,["Variables",var],"access_name",default=var)
+            except KeyError:
+                access_name = var
             # check that the requested variable exists in the ACCESS file
             if access_name in ncfile.variables.keys():
                 # check to see if the variable is already in the data structure
@@ -570,28 +577,21 @@ def makedummyseries(shape):
 def makevardict():
 
     # ACCESS variable name alias dictionary
-    access_alias_dict = {'Fsd': 'av_swsfcdown',
-                         'Fn_sw': 'av_netswsfc',
-                         'Fld': 'av_lwsfcdown',
-                         'Fn_lw': 'av_netlwsfc',
-                         'Ta': 'temp_scrn',
-                         'q': 'qsair_scrn',
-                         'Sws': 'soil_mois',
-                         'Ts': 'soil_temp',
-                         'u': 'u10',
-                         'v': 'v10',
-                         'ps': 'sfc_pres',
-                         'Precip': 'accum_prcp',
-                         'Fh': 'sens_hflx',
-                         'Fe': 'lat_hflx',
-                         'Habl': 'abl_ht'}
-
-    ### Build the 'Variables' control dict
-    var_dict = {}
-    for key in access_alias_dict.keys():
-        var_dict[key] = {'access_name': access_alias_dict[key]}
-
-    return var_dict
+    return {'Fsd': 'av_swsfcdown',
+            'Fn_sw': 'av_netswsfc',
+            'Fld': 'av_lwsfcdown',
+            'Fn_lw': 'av_netlwsfc',
+            'Ta': 'temp_scrn',
+            'q': 'qsair_scrn',
+            'Sws': 'soil_mois',
+            'Ts': 'soil_temp',
+            'u': 'u10',
+            'v': 'v10',
+            'ps': 'sfc_pres',
+            'Precip': 'accum_prcp',
+            'Fh': 'sens_hflx',
+            'Fe': 'lat_hflx',
+            'Habl': 'abl_ht'}
 
 def makesitedict(master_file_path):
         
@@ -670,20 +670,20 @@ master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 
 # get the control file name from the command line
 #cf_name = sys.argv[1]
-cf_name = qcio.get_controlfilename(path='../controlfiles',title='Choose a control file')
+#cf_name = qcio.get_controlfilename(path='../controlfiles',title='Choose a control file')
 # get the control file contents
 logging.info('Building configurations...')
 
-cf = configobj.ConfigObj(cf_name)
+#cf = configobj.ConfigObj(cf_name)
 
 # get stuff from the control file
 #logging.info('Getting control file contents')
 #site_list = cf["Sites"].keys()
-var_dict = makevardict()
-var_list = var_dict.keys()
+#var_dict = makevardict()
+#var_list = var_dict.keys()
 site_dict = makesitedict(master_file_path)
-bsite_list = sorted(site_dict.keys())
-site_list = cf['Sites'].keys()
+site_list = sorted(site_dict.keys())
+#site_list = cf['Sites'].keys()
 
 # check whether any new files can be run
 run_list = check_for_new_data(base_dir)
@@ -691,11 +691,11 @@ run_list = check_for_new_data(base_dir)
 # loop over months
 for this_month in run_list: 
 # loop over sites
-    for i, site in enumerate(site_list):
+    for site in site_list:
 
-        alt_site = bsite_list[i]
+        #alt_site = bsite_list[i]
        
-        info = getcontroldict(base_dir, this_month, alt_site, site_dict[alt_site]) 
+        info = getcontroldict(base_dir, this_month, site, site_dict[site]) 
         #pete_info = get_info_dict(cf,site)
         logging.info("Processing site "+info["site_name"])
         # instance the data structures
@@ -705,11 +705,10 @@ for this_month in run_list:
         file_list = sorted(glob.glob(info["in_filename"]))
         # read the netcdf files
         logging.info('Reading the netCDF files for '+info["site_name"])
-        pdb.set_trace()
-        f = access_read_mfiles2(file_list, var_list=var_list)
+        f = access_read_mfiles2(file_list)
         # get the data from the netCDF files and write it to the 60 minute data structure
         logging.info('Getting the ACCESS data')
-        get_accessdata(cf,ds_60minutes,f,info)
+        get_accessdata(ds_60minutes,f,info)
         # set some global attributes
         logging.info('Setting global attributes')
         set_globalattributes(ds_60minutes,info)
@@ -744,8 +743,8 @@ for this_month in run_list:
         get_groundheatflux(ds_60minutes)
         # Available energy
         get_availableenergy(ds_60minutes)
-        pdb.set_trace()
         if info["interpolate"]:
+            pdb.set_trace()
             # interploate from 60 minute time step to 30 minute time step
             logging.info("Interpolating data to 30 minute time step")
             ds_30minutes = interpolate_to_30minutes(ds_60minutes)
