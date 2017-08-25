@@ -23,6 +23,8 @@ import pytz
 import pdb
 from scipy.interpolate import interp1d
 import sys
+from timezonefinder import TimezoneFinder as tzf
+import xlrd
 # since the scripts directory is there, try importing the modules
 sys.path.append('/mnt/PyFluxPro/scripts')
 # PFP
@@ -40,6 +42,39 @@ class ACCESSData(object):
         self.varattr = {}
 
 # !!! start of function definitions !!!
+def check_for_new_data(raw_dir):
+
+    raw_dir_list = [item for item in os.listdir(raw_dir) if 
+                    os.path.isdir(os.path.join(raw_dir, item))]
+    raw_month_dir_list = []
+    for item in raw_dir_list:
+        try:
+            int(item)
+            raw_month_dir_list.append(item)
+        except:
+            continue
+
+    month_dir = os.path.join(raw_dir, 'monthly')
+    proc_month_dir_list = [item for item in os.listdir(month_dir) if 
+                           os.path.isdir(os.path.join(month_dir, item))]
+
+    unproc_month_list = list(set(raw_month_dir_list) - 
+                             set(proc_month_dir_list))
+
+    current_dir = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m')
+    try:
+        unproc_month_list.remove(current_dir)
+    except KeyError:
+        pass
+
+    if not len(unproc_month_list) == 0:
+        print 'The following months will be processed: {}'.format(', '.join(unproc_month_list))
+    else:
+        print 'Up to date - no new raw data to concatenate to monthly!'
+
+    return unproc_month_list
+
+
 def get_info_dict(cf,site):
     info = {}
     in_path = cf["Sites"][site]["in_filepath"]
@@ -90,7 +125,7 @@ def get_accessdata(cf,ds_60minutes,f,info):
     ds_60minutes.globalattributes["latitude"] = f.variables["lat"][1]
     ds_60minutes.globalattributes["longitude"] = f.variables["lon"][1]
     # list of variables to process
-    var_list = cf["Variables"].keys()
+    var_list = var_dict.keys()
     # get a series of Python datetimes and put this into the data structure
     valid_date = f.variables["valid_date"][:]
     nRecs = len(valid_date)
@@ -128,6 +163,7 @@ def get_accessdata(cf,ds_60minutes,f,info):
     attr = qcutils.MakeAttributeDictionary(long_name='UTC hour')
     qcutils.CreateSeries(ds_60minutes,'Hr_UTC',hr_utc,Flag=flag_60minutes,Attr=attr)
     # now loop over the variables listed in the control file
+    pdb.set_trace()
     for label in var_list:
         # get the name of the variable in the ACCESS file
         access_name = qcutils.get_keyvaluefromcf(cf,["Variables",label],"access_name",default=label)
@@ -497,6 +533,8 @@ def access_read_mfiles2(file_list,var_list=[]):
             var_list=ncfile.variables.keys()
         # load the data into the data structure
         for var in var_list:
+            if var == 'lat':
+                pdb.set_trace()
             # get the name of the variable in the ACCESS file
             access_name = qcutils.get_keyvaluefromcf(cf,["Variables",var],"access_name",default=var)
             # check that the requested variable exists in the ACCESS file
@@ -529,9 +567,8 @@ def access_read_mfiles2(file_list,var_list=[]):
 def makedummyseries(shape):
     return numpy.ma.masked_all(shape)
 
-def makecontroldict(base_dir, yearmonth, master_file_path):
-    ### Define working and final dictionaries ###
-    
+def makevardict():
+
     # ACCESS variable name alias dictionary
     access_alias_dict = {'Fsd': 'av_swsfcdown',
                          'Fn_sw': 'av_netswsfc',
@@ -548,7 +585,40 @@ def makecontroldict(base_dir, yearmonth, master_file_path):
                          'Fh': 'sens_hflx',
                          'Fe': 'lat_hflx',
                          'Habl': 'abl_ht'}
+
+    ### Build the 'Variables' control dict
+    var_dict = {}
+    for key in access_alias_dict.keys():
+        var_dict[key] = {'access_name': access_alias_dict[key]}
+
+    return var_dict
+
+def makesitedict(master_file_path):
+        
+    # Get the data from the master file
+    wb = xlrd.open_workbook(master_file_path)
+    sheet = wb.sheet_by_name('Active')
+    header_row = 9
+    header_list = sheet.row_values(header_row)
+    site_idx = header_list.index('Site')
+    lat_idx = header_list.index('Latitude')
+    lon_idx = header_list.index('Longitude')
+    step_idx = header_list.index('Time step')
+    sites_dict = {}
     
+    for row_num in range(header_row + 1, sheet.nrows):
+        row_list = sheet.row(row_num)
+        site_name = row_list[site_idx].value
+        latitude = float(str(row_list[lat_idx].value).split()[0])
+        longitude = float(str(row_list[lon_idx].value).split()[0])
+        tz = tzf().timezone_at(lng = longitude, lat = latitude)
+        step = row_list[step_idx].value
+        sites_dict[site_name] = {'time_zone': tz, 'time_step': step}
+
+    return sites_dict
+
+def getcontroldict(base_dir, yearmonth, site_name, site_details):
+ 
     # Site and file naming alias dictionary
     site_alias_dict = {'Emerald': {'dict_name': 'Emerald',
                                    'site_name': 'Emerald',
@@ -558,70 +628,30 @@ def makecontroldict(base_dir, yearmonth, master_file_path):
                                  'site_name': 'Yanco',
                                  'in_filename': 'Jaxa',
                                  'out_filename': 'Yanco'}}
-    
-    # Final dictionary
-    master_dict = {'Sites': {},
-                   'Variables': {},
-                   'Options': {}}
-    
-    ### Build the 'Sites' control dicts ###
-        
-    # Get the data from the master file and initialise location list for timezone
-    wb = xlrd.open_workbook(master_file_path)
-    sheet = wb.sheet_by_name('Active')
-    header_row = 9
-    header_list = sheet.row_values(header_row)
-    site_idx = header_list.index('Site')
-    site_list = [str(site.value) for site in sheet.col(site_idx, 10)]
-    lat_idx = header_list.index('Latitude')
-    lat_list = [lat.value for lat in sheet.col(lat_idx, 10)]
-    lon_idx = header_list.index('Longitude')
-    lon_list = [lon.value for lon in sheet.col(lon_idx, 10)]
-    step_idx = header_list.index('Time step')
-    step_list = [step.value for step in sheet.col(step_idx, 10)]
-    loc_d = {site[0]: site[1:] for site in zip(site_list, lat_list, lon_list)}
-    step_d = dict(zip(site_list, step_list))
-    
-    # Iterate over sites
-    for site_name in site_list:
+
+    this_dict = {}
+    try:
+        this_alias_dict = site_alias_dict[site_name]
+        site_name = this_alias_dict['site_name']
+        in_filename_part = this_alias_dict['in_filename'].replace(' ', '_')
+        out_filename_part = this_alias_dict['out_filename'].replace(' ', '')
+        dict_name = this_alias_dict['dict_name'].replace(' ', '')
+    except KeyError:
+        in_filename_part = site_name.replace(' ', '_')
+        out_filename_part = site_name.replace(' ', '')
+        dict_name = out_filename_part
+    in_filename_full = os.path.join(base_dir, yearmonth, '{}*.nc'.format(in_filename_part))
+    out_filename_full = os.path.join(base_dir, 'monthly', yearmonth,
+                                     '{0}_ACCESS_{1}.nc'.format(out_filename_part, 
+                                                                yearmonth))
+    this_dict['in_filename'] = in_filename_full    
+    this_dict['out_filename'] = out_filename_full
+    this_dict['interpolate'] = 'True' if site_details['time_step'] == 30 else False
+    this_dict['site_name'] = site_name
+    this_dict['site_timezone'] = site_details['time_zone']
+    this_dict["site_tz"] = pytz.timezone(site_details['time_zone'])
            
-        this_dict = {}
-        
-        # Do stuff that requires original name before aliasing
-        site_loc = loc_d[site_name]
-        this_dict['site_timezone'] = tzf().timezone_at(lng = site_loc[1], 
-                                                       lat = site_loc[0])
-        site_timestep = step_d[site_name]
-        
-        try:
-            this_alias_dict = site_alias_dict[site_name]
-            site_name = this_alias_dict['site_name']
-            in_filename_part = this_alias_dict['in_filename'].replace(' ', '_')
-            out_filename_part = this_alias_dict['out_filename'].replace(' ', '')
-            dict_name = this_alias_dict['dict_name'].replace(' ', '')
-        except KeyError:
-            in_filename_part = site_name.replace(' ', '_')
-            out_filename_part = site_name.replace(' ', '')
-            dict_name = out_filename_part
-        this_dict['in_filename'] = '{}*.nc'.format(in_filename_part)
-        this_dict['out_filename'] = '{0}_ACCESS_{1}.nc'.format(out_filename_part, 
-                                                               yearmonth)
-        this_dict['in_filepath'] = os.path.join(base_dir, yearmonth + '/')
-        this_dict['out_filepath'] = os.path.join(base_dir, 'monthly', yearmonth + '/')
-        this_dict['interpolate'] = 'True' if site_timestep == 30 else False
-        this_dict['site_name'] = site_name
-        
-        master_dict['Sites'][dict_name] = this_dict
-    
-    ### Build the 'Variables' control dict
-    for key in access_alias_dict:
-        master_dict['Variables'][key] = {'access_name': access_alias_dict[key]}
-    
-    ### Build the options dict
-    master_dict['Options'] = {'WriteExcelIntermediate' : 'No',
-                              'WriteExcelNoGaps': 'No'}
-    
-    return master_dict
+    return this_dict
 
 # !!! end of function definitions !!!
 
@@ -636,85 +666,101 @@ logging.getLogger('').addHandler(console)
 
 # Initialisations
 base_dir = '/rdsi/market/access_opendap'
+master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 
 # get the control file name from the command line
 #cf_name = sys.argv[1]
 cf_name = qcio.get_controlfilename(path='../controlfiles',title='Choose a control file')
 # get the control file contents
-logging.info('Reading the control file')
-#cf = configobj.ConfigObj(cf_name)
-cf = makecontroldict(
+logging.info('Building configurations...')
+
+cf = configobj.ConfigObj(cf_name)
+
 # get stuff from the control file
-logging.info('Getting control file contents')
-site_list = cf["Sites"].keys()
-var_list = cf["Variables"].keys()
+#logging.info('Getting control file contents')
+#site_list = cf["Sites"].keys()
+var_dict = makevardict()
+var_list = var_dict.keys()
+site_dict = makesitedict(master_file_path)
+bsite_list = sorted(site_dict.keys())
+site_list = cf['Sites'].keys()
+
+# check whether any new files can be run
+run_list = check_for_new_data(base_dir)
+
+# loop over months
+for this_month in run_list: 
 # loop over sites
-#site_list = ["AdelaideRiver"]
-for site in site_list:
-    pdb.set_trace()
-    info = get_info_dict(cf,site)
-    logging.info("Processing site "+info["site_name"])
-    # instance the data structures
-    logging.info('Creating the data structures')
-    ds_60minutes = qcio.DataStructure()
-    # get a sorted list of files that match the mask in the control file
-    file_list = sorted(glob.glob(info["in_filename"]))
-    # read the netcdf files
-    logging.info('Reading the netCDF files for '+info["site_name"])
-    f = access_read_mfiles2(file_list,var_list=var_list)
-    # get the data from the netCDF files and write it to the 60 minute data structure
-    logging.info('Getting the ACCESS data')
-    get_accessdata(cf,ds_60minutes,f,info)
-    # set some global attributes
-    logging.info('Setting global attributes')
-    set_globalattributes(ds_60minutes,info)
-    # check for time gaps in the file
-    logging.info("Checking for time gaps")
-    if qcutils.CheckTimeStep(ds_60minutes):
-        qcutils.FixTimeStep(ds_60minutes)
-    # get the datetime in some different formats
-    logging.info('Getting xlDateTime and YMDHMS')
-    qcutils.get_xldatefromdatetime(ds_60minutes)
-    qcutils.get_ymdhmsfromdatetime(ds_60minutes)
-    #f.close()
-    # get derived quantities and adjust units
-    logging.info("Changing units and getting derived quantities")
-    # air temperature from K to C
-    changeunits_airtemperature(ds_60minutes)
-    # soil temperature from K to C
-    changeunits_soiltemperature(ds_60minutes)
-    # pressure from Pa to kPa
-    changeunits_pressure(ds_60minutes)
-    # wind speed from components
-    get_windspeedanddirection(ds_60minutes)
-    # relative humidity from temperature, specific humidity and pressure
-    get_relativehumidity(ds_60minutes)
-    # absolute humidity from temperature and relative humidity
-    get_absolutehumidity(ds_60minutes)
-    # soil moisture from kg/m2 to m3/m3
-    changeunits_soilmoisture(ds_60minutes)
-    # net radiation and upwelling short and long wave radiation
-    get_radiation(ds_60minutes)
-    # ground heat flux as residual
-    get_groundheatflux(ds_60minutes)
-    # Available energy
-    get_availableenergy(ds_60minutes)
-    if info["interpolate"]:
-        # interploate from 60 minute time step to 30 minute time step
-        logging.info("Interpolating data to 30 minute time step")
-        ds_30minutes = interpolate_to_30minutes(ds_60minutes)
-        # get instantaneous precipitation from accumulated precipitation
-        get_instantaneous_precip30(ds_30minutes)
-        # write to netCDF file
-        logging.info("Writing 30 minute data to netCDF file")
-        ncfile = qcio.nc_open_write(info["out_filename"])
-        qcio.nc_write_series(ncfile, ds_30minutes,ndims=1)
-    else:
-        # get instantaneous precipitation from accumulated precipitation
-        get_instantaneous_precip60(ds_60minutes)
-        # write to netCDF file
-        logging.info("Writing 60 minute data to netCDF file")
-        ncfile = qcio.nc_open_write(info["out_filename"])
-        qcio.nc_write_series(ncfile, ds_60minutes,ndims=1)
+    for i, site in enumerate(site_list):
+
+        alt_site = bsite_list[i]
+       
+        info = getcontroldict(base_dir, this_month, alt_site, site_dict[alt_site]) 
+        #pete_info = get_info_dict(cf,site)
+        logging.info("Processing site "+info["site_name"])
+        # instance the data structures
+        logging.info('Creating the data structures')
+        ds_60minutes = qcio.DataStructure()
+        # get a sorted list of files that match the mask in the control file
+        file_list = sorted(glob.glob(info["in_filename"]))
+        # read the netcdf files
+        logging.info('Reading the netCDF files for '+info["site_name"])
+        pdb.set_trace()
+        f = access_read_mfiles2(file_list, var_list=var_list)
+        # get the data from the netCDF files and write it to the 60 minute data structure
+        logging.info('Getting the ACCESS data')
+        get_accessdata(cf,ds_60minutes,f,info)
+        # set some global attributes
+        logging.info('Setting global attributes')
+        set_globalattributes(ds_60minutes,info)
+        # check for time gaps in the file
+        logging.info("Checking for time gaps")
+        if qcutils.CheckTimeStep(ds_60minutes):
+            qcutils.FixTimeStep(ds_60minutes)
+        # get the datetime in some different formats
+        logging.info('Getting xlDateTime and YMDHMS')
+        qcutils.get_xldatefromdatetime(ds_60minutes)
+        qcutils.get_ymdhmsfromdatetime(ds_60minutes)
+        #f.close()
+        # get derived quantities and adjust units
+        logging.info("Changing units and getting derived quantities")
+        # air temperature from K to C
+        changeunits_airtemperature(ds_60minutes)
+        # soil temperature from K to C
+        changeunits_soiltemperature(ds_60minutes)
+        # pressure from Pa to kPa
+        changeunits_pressure(ds_60minutes)
+        # wind speed from components
+        get_windspeedanddirection(ds_60minutes)
+        # relative humidity from temperature, specific humidity and pressure
+        get_relativehumidity(ds_60minutes)
+        # absolute humidity from temperature and relative humidity
+        get_absolutehumidity(ds_60minutes)
+        # soil moisture from kg/m2 to m3/m3
+        changeunits_soilmoisture(ds_60minutes)
+        # net radiation and upwelling short and long wave radiation
+        get_radiation(ds_60minutes)
+        # ground heat flux as residual
+        get_groundheatflux(ds_60minutes)
+        # Available energy
+        get_availableenergy(ds_60minutes)
+        pdb.set_trace()
+        if info["interpolate"]:
+            # interploate from 60 minute time step to 30 minute time step
+            logging.info("Interpolating data to 30 minute time step")
+            ds_30minutes = interpolate_to_30minutes(ds_60minutes)
+            # get instantaneous precipitation from accumulated precipitation
+            get_instantaneous_precip30(ds_30minutes)
+            # write to netCDF file
+            logging.info("Writing 30 minute data to netCDF file")
+            ncfile = qcio.nc_open_write(info["out_filename"])
+            qcio.nc_write_series(ncfile, ds_30minutes,ndims=1)
+        else:
+            # get instantaneous precipitation from accumulated precipitation
+            get_instantaneous_precip60(ds_60minutes)
+            # write to netCDF file
+            logging.info("Writing 60 minute data to netCDF file")
+            ncfile = qcio.nc_open_write(info["out_filename"])
+            qcio.nc_write_series(ncfile, ds_60minutes,ndims=1)
 
 logging.info('All done!')
