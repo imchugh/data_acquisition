@@ -68,9 +68,9 @@ def check_for_new_data(raw_dir):
         pass
 
     if not len(unproc_month_list) == 0:
-        print 'The following months will be processed: {}'.format(', '.join(unproc_month_list))
+        logging.info('The following months will be processed: {}'.format(', '.join(unproc_month_list)))
     else:
-        print 'Up to date - no new raw data to concatenate to monthly!'
+        logging.info('Up to date - no new raw data to concatenate to monthly!')
 
     return unproc_month_list
 
@@ -689,8 +689,12 @@ site_list = sorted(site_dict.keys())
 run_list = check_for_new_data(base_dir)
 
 # loop over months
-for this_month in run_list: 
-# loop over sites
+for this_month in run_list:
+    target_dir = os.path.join(base_dir, 'monthly', this_month)
+    if not os.path.isdir(target_dir):
+        os.mkdir(target_dir)
+
+    # loop over sites
     for site in site_list:
 
         #alt_site = bsite_list[i]
@@ -708,7 +712,11 @@ for this_month in run_list:
         f = access_read_mfiles2(file_list)
         # get the data from the netCDF files and write it to the 60 minute data structure
         logging.info('Getting the ACCESS data')
-        get_accessdata(ds_60minutes,f,info)
+        try:
+            get_accessdata(ds_60minutes,f,info)
+        except:
+            logging.error('No data for this site! Skipping...')
+            continue
         # set some global attributes
         logging.info('Setting global attributes')
         set_globalattributes(ds_60minutes,info)
@@ -744,7 +752,6 @@ for this_month in run_list:
         # Available energy
         get_availableenergy(ds_60minutes)
         if info["interpolate"]:
-            pdb.set_trace()
             # interploate from 60 minute time step to 30 minute time step
             logging.info("Interpolating data to 30 minute time step")
             ds_30minutes = interpolate_to_30minutes(ds_60minutes)
