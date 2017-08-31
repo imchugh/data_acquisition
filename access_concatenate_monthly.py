@@ -3,6 +3,7 @@ from collections import OrderedDict
 from configobj import ConfigObj
 import datetime
 import glob
+import netCDF4
 import os
 import pdb
 import sys
@@ -47,60 +48,59 @@ def read_site_master(xl_file_path, sheet_name):
 
     return site_info
 
-# ask the user for the control file and load the contents
-cf = qcio.load_controlfile(path='../controlfiles',title='Choose a control file')
-xl_file_path = cf["Files"]["xl_file_path"]
-sheet_name = cf["Files"]["sheet_name"]
-cf_base_path = cf["Files"]["cf_base_path"]
-nc_base_path = cf["Files"]["nc_base_path"]
-access_base_path = cf["Files"]["access_base_path"]
-last_month_processed = cf["Options"]["last_month_processed"]
-# check the control file directory exists and make it if it doesn't
-if not os.path.exists(cf_base_path):
-    os.mkdir(cf_base_path)
-# delete any existing control files
-logger.info("Deleting any existing control files")
-file_list = sorted(glob.glob(cf_base_path+"/*"))
-pdb.set_trace()
-for item in file_list:
-    os.remove(item)
-# get a list of monthly ACCESS directories
-logger.info("Getting a list of months to concatenate")
+xl_file_path = '/mnt/OzFlux/Sites/site_master.xls'
+sheet_name = 'Active'
+nc_base_path = "/mnt/OzFlux/Sites/"
+access_base_path = "/rdsi/market/access_opendap/monthly"
+
+logger.info("Getting a list of months available for concatenation")
 access_monthly_dir_list = sorted(glob.glob(access_base_path+"/*"))
 access_month_full_list = [item.split("/")[-1] for item in access_monthly_dir_list]
-# get the index of the last month processed
-idx = access_month_full_list.index(last_month_processed)
-# get a list months that have not been processed
-access_month_list = access_month_full_list[idx+1:]
+
 # read the site master file and get a list of sites to process
 logger.info("Reading the site master file")
 site_info = read_site_master(xl_file_path, sheet_name)
 site_list = site_info.keys()
 for site in site_list:
     logger.info("Processing site "+site)
-    access_file_path_list = []
-    for n, access_month in enumerate(access_month_list):
-        access_file_path = os.path.join(access_base_path,access_month,site+"_ACCESS_"+access_month+".nc")
-        if os.path.exists(access_file_path):
-            access_file_path_list.append(access_file_path)
-    if len(access_file_path_list) > 0:
-        cf_file_path = os.path.join(cf_base_path,site+".txt")
-        cf_concat = ConfigObj(indent_type="    ")
-        cf_concat.filename = cf_file_path
-        cf_concat["Options"] = {"NumberOfDimensions":1,
-                                "MaxGapInterpolate":0,
-                                "FixTimeStepMethod":"round",
-                                "Truncate":"No",
-                                "TruncateThreshold":50,
-                                "SeriesToCheck":[]}
-        nc_file_name = site+"_ACCESS.nc"
-        nc_out_path = os.path.join(nc_base_path,site,"Data","ACCESS",nc_file_name)
-        cf_concat["Files"] = {"Out":{"ncFileName":nc_out_path},"In":{}}
-        cf_concat["Files"]["In"]["0"] = nc_out_path
-        for n, access_file_path in enumerate(access_file_path_list):
-            cf_concat["Files"]["In"][str(n+1)] = access_file_path
-        pdb.set_trace()
-        cf_concat.write()
+    path_to_site_nc = os.path.join(nc_base_path, site, 'Data/ACCESS', 
+                                   '{}_ACCESS.nc'.format(site))
+    try:
+        ncobj = netCDF4.Dataset(path_to_site_nc)
+        last_date = netCDF4.num2date(ncobj.variables['time'][-1],
+                                     'days since 1800-01-01 00:00:00')
+        ncobj.close()
+        processed_to_month = datetime.datetime.strftime(last_date, '%Y%m')
+        try:
+            idx = access_month_full_list.index(processed_to_month)
+            months_to_process = access_month_full_list[idx:]
+        except ValueError:
+            'No new monthly data available for concatenation!'
+            months_to_process = []
+    except:
+        continue
+    pdb.set_trace()
+    if not len(months_to_process) == 0:
+        access_file_path_list = []
+        for n, access_month in enumerate(months_to_process):
+            access_file_path = os.path.join(access_base_path,access_month,site+"_ACCESS_"+access_month+".nc")
+            if os.path.exists(access_file_path):
+                access_file_path_list.append(access_file_path)
+        if len(access_file_path_list) > 0:
+            config_dict = {}
+            config_dict["Options"] = {"NumberOfDimensions":1,
+                                      "MaxGapInterpolate":0,
+                                      "FixTimeStepMethod":"round",
+                                      "Truncate":"No",
+                                      "TruncateThreshold":50,
+                                      "SeriesToCheck":[]}
+            nc_file_name = site+"_ACCESS.nc"
+            nc_out_path = os.path.join(nc_base_path,site,"Data","ACCESS",nc_file_name)
+            config_dict["Files"] = {"Out":{"ncFileName":nc_out_path},"In":{}}
+            config_dict["Files"]["In"]["0"] = nc_out_path
+            for n, access_file_path in enumerate(access_file_path_list):
+                config_dict["Files"]["In"][str(n+1)] = access_file_path
+
 logger.info("Finished generating ACCESS concatenation control files")
 # now do the concatenation
 file_list = sorted(glob.glob(cf_base_path+"/*"))
