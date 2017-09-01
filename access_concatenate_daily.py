@@ -64,14 +64,14 @@ def check_for_new_data(raw_dir):
     current_dir = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m')
     try:
         unproc_month_list.remove(current_dir)
-    except KeyError:
+    except ValueError:
         pass
 
     if not len(unproc_month_list) == 0:
         logging.info('The following months will be processed: {}'.format(', '.join(unproc_month_list)))
     else:
         logging.info('Up to date - no new raw data to concatenate to monthly!')
-
+    pdb.set_trace()
     return unproc_month_list
 
 
