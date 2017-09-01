@@ -275,7 +275,7 @@ def process_data(z, data_path):
             msg_list.append('No archive file available... '
                             .format(site_id))
             out_fname = os.path.join(data_path, 
-                                     'bom_station_{0}.txt'.format(site_id))
+                                     'HM01X_Data_{0}.csv'.format(site_id))
             date_list = sorted(bom_dict.keys())
             with open(out_fname, 'w') as out_f:
                 out_f.write(bom_header)
@@ -339,8 +339,8 @@ def subset_station_list(files_list, target_ID_list):
 ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 xlname = '/mnt/OzFlux/Sites/site_master.xls'
-data_path = "/mnt/OzFlux/AWS/Test/"
-logfile_path = "/mnt/OzFlux/AWS/Logfiles/"
+data_path = "/rdsi/market/aws_ftp"
+logfile_path = "/mnt/OzFlux/Logfiles/AWS"
 mail_recipients = ['ian.mchugh@monash.edu']
 
 header_list = ['hm',
