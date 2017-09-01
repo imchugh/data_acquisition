@@ -11,7 +11,7 @@ import time
 import xlrd
 
 # Import custom modules
-sys.path.append('../../../OzFluxQC/scripts')
+sys.path.append('mnt/OzFlux/OzFluxQC/scripts')
 import constants as c
 import grunt_email
 import meteorologicalfunctions as mf

@@ -338,7 +338,7 @@ def subset_station_list(files_list, target_ID_list):
 # Set stuff up
 ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
-xlname = '/mnt/OzFlux/Sites/site_master.xls' #"/mnt/OzFlux/AWS/AWS_Locations.xls"
+xlname = '/mnt/OzFlux/Sites/site_master.xls'
 data_path = "/mnt/OzFlux/AWS/Test/"
 logfile_path = "/mnt/OzFlux/AWS/Logfiles/"
 mail_recipients = ['ian.mchugh@monash.edu']
