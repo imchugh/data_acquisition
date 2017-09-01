@@ -71,7 +71,7 @@ def check_for_new_data(raw_dir):
         logging.info('The following months will be processed: {}'.format(', '.join(unproc_month_list)))
     else:
         logging.info('Up to date - no new raw data to concatenate to monthly!')
-    pdb.set_trace()
+
     return unproc_month_list
 
 
@@ -630,16 +630,16 @@ def getcontroldict(base_dir, yearmonth, site_name, site_details):
                                  'out_filename': 'Yanco'}}
 
     this_dict = {}
-    try:
-        this_alias_dict = site_alias_dict[site_name]
-        site_name = this_alias_dict['site_name']
-        in_filename_part = this_alias_dict['in_filename'].replace(' ', '_')
-        out_filename_part = this_alias_dict['out_filename'].replace(' ', '')
-        dict_name = this_alias_dict['dict_name'].replace(' ', '')
-    except KeyError:
-        in_filename_part = site_name.replace(' ', '_')
-        out_filename_part = site_name.replace(' ', '')
-        dict_name = out_filename_part
+#    try:
+#        this_alias_dict = site_alias_dict[site_name]
+#        site_name = this_alias_dict['site_name']
+#        in_filename_part = this_alias_dict['in_filename'].replace(' ', '_')
+#        out_filename_part = this_alias_dict['out_filename'].replace(' ', '')
+#        dict_name = this_alias_dict['dict_name'].replace(' ', '')
+#    except KeyError:
+    in_filename_part = site_name.replace(' ', '_')
+    out_filename_part = site_name.replace(' ', '')
+    dict_name = out_filename_part
     in_filename_full = os.path.join(base_dir, yearmonth, '{}*.nc'.format(in_filename_part))
     out_filename_full = os.path.join(base_dir, 'monthly', yearmonth,
                                      '{0}_ACCESS_{1}.nc'.format(out_filename_part, 
