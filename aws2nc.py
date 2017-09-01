@@ -450,7 +450,7 @@ console.setLevel(logging.INFO)
 logging.getLogger('').addHandler(console)
 
 # Basic configurations
-in_path = "/mnt/OzFlux/AWS/Test/"
+in_path = "/rdsi/market/aws_ftp"
 out_path = "/mnt/OzFlux/Sites/"
 master_file_pathname = "/mnt/OzFlux/Sites/site_master.xls"
 
