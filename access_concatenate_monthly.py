@@ -17,11 +17,13 @@ sys.path.append('/mnt/PyFluxPro/scripts')
 import qcio
 import qclog
 
-t = time.localtime()
-rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-log_filename = 'access_concatenate_'+rundatetime+'.log'
-logger = qclog.init_logger(logger_name="pfp_log", file_handler=log_filename)
+#------------------------------------------------------------------------------
+# Functions                                                                   #
+#------------------------------------------------------------------------------
 
+
+
+#------------------------------------------------------------------------------
 def read_site_master(xl_file_path, sheet_name):
     """
     """
@@ -47,12 +49,27 @@ def read_site_master(xl_file_path, sheet_name):
             site_info[site_name][item] = xl_sheet.cell(n,i).value
 
     return site_info
+#------------------------------------------------------------------------------
 
+
+
+#------------------------------------------------------------------------------
+# Main program                                                                #
+#------------------------------------------------------------------------------
+
+# Set basic file paths
 xl_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 sheet_name = 'Active'
 nc_base_path = "/mnt/OzFlux/Sites/"
 access_base_path = "/rdsi/market/access_opendap/monthly"
 
+# Start the logger
+t = time.localtime()
+rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
+log_filename = 'access_concatenate_'+rundatetime+'.log'
+logger = qclog.init_logger(logger_name="pfp_log", file_handler=log_filename)
+
+# Check for new months of data
 logger.info("Getting a list of months available for concatenation")
 access_monthly_dir_list = sorted(glob.glob(access_base_path+"/*"))
 access_month_full_list = [item.split("/")[-1] for item in access_monthly_dir_list]
@@ -61,6 +78,8 @@ access_month_full_list = [item.split("/")[-1] for item in access_monthly_dir_lis
 logger.info("Reading the site master file")
 site_info = read_site_master(xl_file_path, sheet_name)
 site_list = site_info.keys()
+
+# Iterate over the available sites
 for site in site_list:
     logger.info("Processing site "+site)
     path_to_site_nc = os.path.join(nc_base_path, site, 'Data/ACCESS', 
@@ -78,37 +97,55 @@ for site in site_list:
             'No new monthly data available for concatenation!'
             months_to_process = []
     except:
+        # Skip to next site
         continue
-    pdb.set_trace()
+
+    # If there are processed months to be added...
+    # First build a full set of file paths for each new month and check they exist (skip if not)
     if not len(months_to_process) == 0:
         access_file_path_list = []
         for n, access_month in enumerate(months_to_process):
-            access_file_path = os.path.join(access_base_path,access_month,site+"_ACCESS_"+access_month+".nc")
+            access_file_path = os.path.join(access_base_path,access_month,
+                                            site+"_ACCESS_"+access_month+".nc")
             if os.path.exists(access_file_path):
                 access_file_path_list.append(access_file_path)
+            else:
+                logging.error('Month file not available in directory! Skipping...')
+                continue
+        
+        # If there is data for this site in all of the month folders
         if len(access_file_path_list) > 0:
-            config_dict = {}
-            config_dict["Options"] = {"NumberOfDimensions":1,
-                                      "MaxGapInterpolate":0,
-                                      "FixTimeStepMethod":"round",
-                                      "Truncate":"No",
-                                      "TruncateThreshold":50,
-                                      "SeriesToCheck":[]}
+
+            logger.info("Building ACCESS concatenation control file")
+            
+            # Build an ordered config dict
+            # First options
+            options_list = [("NumberOfDimensions", 1),
+                            ("MaxGapInterpolate", 0),
+                            ("FixTimeStepMethod", "round"),
+                            ("Truncate", "No"),
+                            ("TruncateThreshold", 50),
+                            ("SeriesToCheck", [])]
+            options_dict = OrderedDict(options_list)
+
+            # Now files
+            infile_list = [(str(i + 1), access_file_path) for i, access_file_path 
+                           in enumerate(access_file_path_list)]
             nc_file_name = site+"_ACCESS.nc"
             nc_out_path = os.path.join(nc_base_path,site,"Data","ACCESS",nc_file_name)
-            config_dict["Files"] = {"Out":{"ncFileName":nc_out_path},"In":{}}
-            config_dict["Files"]["In"]["0"] = nc_out_path
-            for n, access_file_path in enumerate(access_file_path_list):
-                config_dict["Files"]["In"][str(n+1)] = access_file_path
+            infile_list.insert(0, ('0', nc_out_path))
+            outfile_list = [('ncFileName', nc_out_path)]
+            files_dict = OrderedDict([('In', OrderedDict(infile_list)),
+                                      ('Out', OrderedDict(outfile_list))])
 
-logger.info("Finished generating ACCESS concatenation control files")
-# now do the concatenation
-file_list = sorted(glob.glob(cf_base_path+"/*"))
-for item in file_list:
-    cf_read = ConfigObj(infile=item)
-    cf_path, cf_name = os.path.split(item)
-    logger.info("Concatenating using "+cf_name)
-    qcio.nc_concatenate(cf_read)
+            # Now complete the dictionary 
+            config_dict = OrderedDict([('Options', options_dict),
+                                       ('Files', files_dict)])
+
+            # Do the concatenation
+            qcio.nc_concatenate(config_dict)
 
 logger.info("")
 logger.info("access_concatenate: all done")
+
+#------------------------------------------------------------------------------
