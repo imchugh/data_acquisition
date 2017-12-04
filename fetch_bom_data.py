@@ -225,7 +225,7 @@ def process_data(z, data_path):
             msg_list.append('No valid data found in ftp file; skipping update...')
             logging.warning(''.join(msg_list))
             continue
-                    
+        
         # Check if there is a current file for this site id
         if site_id in current_id_dict:
 
@@ -268,7 +268,7 @@ def process_data(z, data_path):
             os.remove(temp_fpname)
             msg_list.append('Successfully updated file!')
             logging.info(''.join(msg_list))
-                            
+                             
         else:
             
             # Write all clean lines from BOM file to new file

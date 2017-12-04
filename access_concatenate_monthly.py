@@ -81,6 +81,7 @@ site_list = site_info.keys()
 
 # Iterate over the available sites
 for site in site_list:
+    
     logger.info("Processing site "+site)
     path_to_site_nc = os.path.join(nc_base_path, site, 'Data/ACCESS', 
                                    '{}_ACCESS.nc'.format(site))

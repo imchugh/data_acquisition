@@ -630,16 +630,16 @@ def getcontroldict(base_dir, yearmonth, site_name, site_details):
                                  'out_filename': 'Yanco'}}
 
     this_dict = {}
-#    try:
-#        this_alias_dict = site_alias_dict[site_name]
-#        site_name = this_alias_dict['site_name']
-#        in_filename_part = this_alias_dict['in_filename'].replace(' ', '_')
-#        out_filename_part = this_alias_dict['out_filename'].replace(' ', '')
-#        dict_name = this_alias_dict['dict_name'].replace(' ', '')
-#    except KeyError:
-    in_filename_part = site_name.replace(' ', '_')
-    out_filename_part = site_name.replace(' ', '')
-    dict_name = out_filename_part
+    try:
+        this_alias_dict = site_alias_dict[site_name]
+        site_name = this_alias_dict['site_name']
+        in_filename_part = this_alias_dict['in_filename'].replace(' ', '_')
+        out_filename_part = this_alias_dict['out_filename'].replace(' ', '')
+        dict_name = this_alias_dict['dict_name'].replace(' ', '')
+    except KeyError:
+        in_filename_part = site_name.replace(' ', '_')
+        out_filename_part = site_name.replace(' ', '')
+        dict_name = out_filename_part
     in_filename_full = os.path.join(base_dir, yearmonth, '{}*.nc'.format(in_filename_part))
     out_filename_full = os.path.join(base_dir, 'monthly', yearmonth,
                                      '{0}_ACCESS_{1}.nc'.format(out_filename_part, 
@@ -657,7 +657,8 @@ def getcontroldict(base_dir, yearmonth, site_name, site_details):
 
 # !!! start of main program !!!
 # start the logger
-logging.basicConfig(filename='access_concat.log',level=logging.DEBUG)
+log_filename = '../../Logfiles/ACCESS/access_concatenate_daily.log'
+logging.basicConfig(filename=log_filename,level=logging.DEBUG)
 console = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s', '%H:%M:%S')
 console.setFormatter(formatter)
@@ -687,7 +688,6 @@ site_list = sorted(site_dict.keys())
 
 # check whether any new files can be run
 run_list = check_for_new_data(base_dir)
-
 # loop over months
 for this_month in run_list:
     target_dir = os.path.join(base_dir, 'monthly', this_month)

@@ -11,7 +11,7 @@ import time
 import xlrd
 
 # Import custom modules
-sys.path.append('mnt/OzFlux/OzFluxQC/scripts')
+sys.path.append('/mnt/OzFlux/OzFluxQC/scripts')
 import constants as c
 import grunt_email
 import meteorologicalfunctions as mf
@@ -172,7 +172,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             except:
                 continue
 
-    in_filename = in_path+"HM01X_Data*.csv"
+    in_filename = os.path.join(in_path, 'HM01X_Data*.csv')
     file_list = sorted(glob.glob(in_filename))
     site_list = bom_sites_info.keys()
     for site_name in sorted(site_list):
@@ -214,6 +214,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
                                   missing_values=-9999,filling_values=-9999)
             data = numpy.ma.masked_equal(data,float(-9999),copy=True)
             data_dict[sn] = data
+
         # now pull the data out and put it in separate data structures, one per station, all
         # of which are held in a data structure dictionary
         ds_dict = {}
@@ -438,7 +439,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
 # Set up logging    
 t = time.localtime()
 rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-log_filename = '../../Logfiles/aws2nc_'+rundatetime+'.log'
+log_filename = '../../Logfiles/AWS/aws2nc_'+rundatetime+'.log'
 logging.basicConfig(filename=log_filename,
                     format='%(asctime)s %(levelname)s %(message)s',
                     datefmt = '%H:%M:%S',
