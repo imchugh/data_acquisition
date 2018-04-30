@@ -58,8 +58,8 @@ def check_for_new_data(raw_dir):
     proc_month_dir_list = [item for item in os.listdir(month_dir) if 
                            os.path.isdir(os.path.join(month_dir, item))]
 
-    unproc_month_list = list(set(raw_month_dir_list) - 
-                             set(proc_month_dir_list))
+    unproc_month_list = sorted(list(set(raw_month_dir_list) - 
+                                    set(proc_month_dir_list)))
 
     current_dir = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m')
     try:
