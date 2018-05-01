@@ -165,7 +165,7 @@ class ozflux_data_generator(object):
     #--------------------------------------------------------------------------        
     
     #--------------------------------------------------------------------------
-    def ozflux_modis_data(self, site, product, band, start_date, end_date,
+    def     ozflux_modis_data(self, site, product, band, start_date, end_date,
                               subset_height_km = 0, subset_width_km = 0):
         
         lat = self.site_list.loc[site, 'Latitude']
