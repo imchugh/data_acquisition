@@ -39,8 +39,10 @@ class modis_data(object):
           from left to right boundary of subset
     
     Returns:
-        * MODIS data class containing:
-            * a
+        * MODIS data class containing the following:
+            * band (attribute): MODIS band selected for retrieval
+            * cellsize (attribute): ???
+            *
     '''
     def __init__(self, latitude, longitude, product, band, 
                  start_date, end_date,
