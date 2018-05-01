@@ -39,7 +39,8 @@ class modis_data(object):
           from left to right boundary of subset
     
     Returns:
-        * MODIS data class
+        * MODIS data class containing:
+            * a
     '''
     def __init__(self, latitude, longitude, product, band, 
                  start_date, end_date,
@@ -72,6 +73,9 @@ class modis_data(object):
                           [self.start_date, self.end_date])
         included_dates = filter(lambda x: refmt_dates[0] <= x <= refmt_dates[1], 
                                 modis_date_list)
+        if len(included_dates) == 0: raise RuntimeError('No data available '
+                                                        'between requested '
+                                                        'dates!')
         chunked_dates = _chunk_dates(included_dates)
         data_dict, date_list = {}, []
         qc_band = get_qc_variable_band(self.product, self.band)
@@ -84,11 +88,11 @@ class modis_data(object):
             if i == 1: print 'Fetching QC data from server for dates:'
             data_list = []
             for date_pair in chunked_dates:
-                data = get_subset_data(self.latitude, self.longitude, 
-                                       self.product, this_band, 
-                                       date_pair[0], date_pair[1], 
-                                       self.subset_height_km, 
-                                       self.subset_width_km)
+                data = _get_subset_data(self.latitude, self.longitude, 
+                                        self.product, this_band, 
+                                        date_pair[0], date_pair[1], 
+                                        self.subset_height_km, 
+                                        self.subset_width_km)
                 for line in data.subset:
                     data_list.append(int(line.split(',')[-1]))
                     date = str(line.split(',')[2])
@@ -114,10 +118,15 @@ class modis_data(object):
                 data_dict[this_band] = _convert_binary(data_list, self.product)
         return pd.DataFrame(data_dict, index = date_list)
     #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
     def plot_data(self):
         
+        if int(filter(lambda x: x.isdigit(), self.product)[:2]) == 12:
+            print 'Plotting not implemented for land cover class!'
+            return
         qc_band = ','.join(get_qc_variable_band(self.product, self.band))
-        threshold = get_qc_threshold(self.product)
+        if len(qc_band) == 2: qc_band = None
         fig, ax = plt.subplots(1, 1, figsize = (14, 8))
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
@@ -125,16 +134,44 @@ class modis_data(object):
         ax.tick_params(axis = 'x', labelsize = 14)
         ax.set_xlabel('Date', fontsize = 14)
         ax.set_ylabel('{0} ({1})'.format(self.band, self.units), fontsize = 14)
-        best_df = self.data.loc[self.data[qc_band] == 0]
-        ax.plot(best_df.index, best_df[self.band], marker = 'o', mfc = 'green',
-                ls = '', alpha = 0.5)
-        good_df = self.data.loc[(self.data[qc_band] > 0) &
-                                (self.data[qc_band] <= threshold)]
-        ax.plot(good_df.index, good_df[self.band], marker = 'o', mfc = 'orange',
-                ls = '', alpha = 0.5)
-        bad_df = self.data.loc[self.data[qc_band] > threshold]
-        ax.plot(bad_df.index, bad_df[self.band], marker = 'o', mfc = 'red',
-                ls = '', alpha = 0.5)
+        if qc_band == None:
+            ax.plot(self.data.index, self.data[self.band], marker = 'o', 
+                    mfc = 'blue', ls = '', alpha = 0.5)
+        else:
+            threshold = get_qc_threshold(self.product)
+            best_df = self.data.loc[self.data[qc_band] == 0]
+            ax.plot(best_df.index, best_df[self.band], marker = 'o', 
+                    mfc = 'green', ls = '', alpha = 0.5)
+            good_df = self.data.loc[(self.data[qc_band] > 0) &
+                                    (self.data[qc_band] <= threshold)]
+            ax.plot(good_df.index, good_df[self.band], marker = 'o', 
+                    mfc = 'orange', ls = '', alpha = 0.5)
+            bad_df = self.data.loc[self.data[qc_band] > threshold]
+            ax.plot(bad_df.index, bad_df[self.band], marker = 'o', mfc = 'red',
+                    ls = '', alpha = 0.5)
+        fig.show()
+        return
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------    
+class ozflux_data_generator(object):
+
+    #--------------------------------------------------------------------------    
+    '''
+    '''
+    def __init__(self, master_file_path):
+        self.site_list = get_ozflux_site_list(master_file_path)
+        self._subset_class = modis_data
+    #--------------------------------------------------------------------------        
+    
+    #--------------------------------------------------------------------------
+    def ozflux_modis_data(self, site, product, band, start_date, end_date,
+                              subset_height_km = 0, subset_width_km = 0):
+        
+        lat = self.site_list.loc[site, 'Latitude']
+        lon = self.site_list.loc[site, 'Longitude']
+        return self._subset_class(lat, lon, product, band, start_date, end_date,
+                                  subset_height_km, subset_width_km, site)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -238,7 +275,7 @@ def get_qc_definition(product):
                          'empirical algorithm used'),
                      3: ('Main method failed due to problems other '
                          'than geometry, empirical algorithm used'),
-                     4: ('Pixel not produced at all, value couldn’t '
+                     4: ('Pixel not produced at all, value couldnt '
                          'be retrieved (possible reasons: bad L1B '
                          'data, unusable MOD09GA data)')},
                 '5': {0: 'Very best possible',
@@ -289,7 +326,7 @@ def get_qc_variable_band(product, band = None):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_subset_data(lat, lon, product, band, start_date, end_date, 
+def _get_subset_data(lat, lon, product, band, start_date, end_date, 
                     subset_height_km = 0, subset_width_km = 0):
 
     assert start_date <= end_date
@@ -313,15 +350,4 @@ def get_ozflux_site_list(master_file_path):
     df.index = df[header_list[0]]
     df.drop(header_list[0], axis = 1, inplace = True)
     return df
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------    
-def get_ozflux_modis_data(site, product, band, start_date, end_date,
-                          subset_height_km = 0, subset_width_km = 0):
-    
-    site_df = get_ozflux_site_list()
-    latitude = site_df.loc[site, 'Latitude']
-    longitude = site_df.loc[site, 'Longitude']
-    return modis_data(latitude, longitude, product, band, start_date, end_date,
-                      subset_height_km, subset_width_km, site)
-#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------        
