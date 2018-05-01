@@ -5,11 +5,10 @@ Created on Tue Jan 16 14:38:30 2018
 
 @author: ian
 """
-from suds.client import Client
-
 import datetime as dt
 import matplotlib.pyplot as plt
 import pandas as pd
+from suds.client import Client
 import webbrowser
 import xlrd
 
@@ -19,6 +18,29 @@ wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
 class modis_data(object):
     
     #--------------------------------------------------------------------------
+    '''
+    Object containing MODIS subset data
+    
+    Args:
+        * latitude (int or float): decimal latitude of location
+        * longitude (int or float): decimal longitude of location
+        * product (str): MODIS product for which to retrieve data (note that 
+          not all products are available from the web service - use the 
+          'get_product_list()' function of this module for a list of the 
+          available products)'
+        * band (str): MODIS product band for which to retrieve data (use the 
+          'get_band_list(<product>)' function for a list of the available 
+          bands)
+        * start_date (python datetime): first date for which data is required
+        * end_date (python datetime): last date for which data is required
+        * subset_height_km (int): distance in kilometres (centred on location)
+          from upper to lower boundary of subset
+        * subset_width_km (int): distance in kilometres (centred on location)
+          from left to right boundary of subset
+    
+    Returns:
+        * MODIS data class
+    '''
     def __init__(self, latitude, longitude, product, band, 
                  start_date, end_date,
                  subset_height_km = 0, subset_width_km = 0, site = None):
