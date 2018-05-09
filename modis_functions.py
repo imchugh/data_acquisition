@@ -7,10 +7,13 @@ Created on Tue Jan 16 14:38:30 2018
 """
 import datetime as dt
 import matplotlib.pyplot as plt
+import numpy as np
+import os
 import pandas as pd
 from suds.client import Client
 import webbrowser
 import xlrd
+import pdb
 
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
            'MODIS_soapservice.wsdl')
@@ -41,7 +44,7 @@ class modis_data(object):
     Returns:
         * MODIS data class containing the following:
             * band (attribute): MODIS band selected for retrieval
-            * cellsize (attribute): ???
+            * cellsize (attribute): actual width of pixel in m
             *
     '''
     def __init__(self, latitude, longitude, product, band, 
@@ -63,72 +66,127 @@ class modis_data(object):
         self.subset_height_km = subset_height_km
         self.subset_width_km = subset_width_km
         self.site = site
-        self.data = self.compile_data()
+        self.data = self._compile_data(init = True)
     #-------------------------------------------------------------------------- 
 
     #--------------------------------------------------------------------------
-    def compile_data(self):
-        
-        modis_date_list = get_date_list(self.latitude, self.longitude, 
-                                        self.product)
-        refmt_dates = map(lambda x: dt.datetime.strftime(x, 'A%Y%j'), 
-                          [self.start_date, self.end_date])
-        included_dates = filter(lambda x: refmt_dates[0] <= x <= refmt_dates[1], 
-                                modis_date_list)
-        if len(included_dates) == 0: raise RuntimeError('No data available '
-                                                        'between requested '
-                                                        'dates!')
-        chunked_dates = _chunk_dates(included_dates)
-        data_dict, date_list = {}, []
+    def _compile_data(self, init = False):
+
+        grouped_dates = self._find_dates()
         qc_band = get_qc_variable_band(self.product, self.band)
-        if qc_band[0] is None: 
-            bands = [self.band]
-        else:
-            bands = [self.band] + qc_band
-        for i, this_band in enumerate(bands):
-            if i == 0: print 'Fetching primary data from server for dates:'
-            if i == 1: print 'Fetching QC data from server for dates:'
+        if not qc_band: bands = [self.band]
+        if qc_band: bands = [self.band] + [qc_band]
+        df_list = []
+        for this_band in bands:
             data_list = []
-            for date_pair in chunked_dates:
-                data = _get_subset_data(self.latitude, self.longitude, 
-                                        self.product, this_band, 
-                                        date_pair[0], date_pair[1], 
-                                        self.subset_height_km, 
-                                        self.subset_width_km)
-                for line in data.subset:
-                    data_list.append(int(line.split(',')[-1]))
-                    date = str(line.split(',')[2])
-                    print '{},'.format(date[1:]),
-                    if i == 0: date_list.append(date)
-            print                      
-            if i == 0:
-                if not data.scale == 0: 
-                    data_dict[this_band] = map(lambda x: x * data.scale, 
-                                               data_list)
-                else:
-                    data_dict[this_band] = data_list
-                date_list = map(lambda x: dt.datetime.strptime(x, 'A%Y%j').date(),
-                                date_list)
-                self.xllcorner = data.xllcorner
-                self.yllcorner = data.yllcorner
-                self.cellsize = data.cellsize
-                self.nrows = data.nrows
-                self.ncols = data.ncols
-                self.units = data.units
-                self.scale = data.scale
+            date_list = []
+            if this_band == self.band: 
+                print ('Fetching primary data from server for dates:')
             else:
-                data_dict[this_band] = _convert_binary(data_list, self.product)
-        return pd.DataFrame(data_dict, index = date_list)
+                print ('Fetching QC data from server for dates:')
+            for date_pair in grouped_dates:
+                data = get_subset_data(self.latitude, self.longitude, 
+                                       self.product, this_band, 
+                                       date_pair[0], date_pair[1], 
+                                       self.subset_height_km, 
+                                       self.subset_width_km)
+                npixels = int(data.ncols * data.nrows)
+                for line in data.subset:
+                    vals = map(lambda x: int(x), line.split(',')[-npixels:])
+                    date = str(line.split(',')[2])
+                    date_list.append(date)
+                    if this_band == self.band: 
+                        if data.scale: vals = map(lambda x: x * data.scale, vals)
+                    else:
+                        vals = _convert_binary(vals, self.product)
+                    data_list.append(vals)
+                    print '{},'.format(date[1:]),
+            df_index = map(lambda x: dt.datetime.strptime(x, 'A%Y%j').date(),
+                           date_list)
+            df_cols = map(lambda x: '{0}_pixel_{1}'.format(this_band, str(x)),
+                          range(npixels))
+            df_list.append(pd.DataFrame(data_list, 
+                                        index = df_index, 
+                                        columns = df_cols))
+            print
+        if init:
+            self.xllcorner = data.xllcorner
+            self.yllcorner = data.yllcorner
+            self.cellsize = data.cellsize
+            self.nrows = data.nrows
+            self.ncols = data.ncols
+            self.npixels = npixels
+            self.centerpixel = npixels / 2
+            self.units = data.units
+            self.scale = data.scale
+        return pd.concat(df_list, axis = 1)
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
-    def plot_data(self):
+    def average_pixels(self, pixel_quality = None):
+        
+        if pixel_quality: 
+            try:
+                assert pixel_quality in ['High', 'Acceptable']
+            except:
+                raise KeyError('pixel_quality options are: "High", ' 
+                               ' "Acceptable" or None')
+        if self.npixels == 1: return
+        df = self.data.copy()
+        qc_name = get_qc_variable_band(self.product)
+        if qc_name and pixel_quality:
+            if pixel_quality == 'High': threshold = 0
+            if pixel_quality == 'Acceptable': threshold = get_qc_threshold(self.product)
+            for pixel in xrange(self.npixels):
+                var_str = '{0}_pixel_{1}'.format(self.band, str(pixel))
+                qc_str = '{0}_pixel_{1}'.format(qc_name, str(pixel))
+                df.loc[df[qc_str] > threshold, var_str] = np.nan
+        var_list = filter(lambda x: self.band in x, df.columns)
+        return df[var_list].mean(axis = 1)
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
+    def _find_dates(self, n_per_chunk = 8):
+        
+        modis_date_list = get_date_list(self.latitude, self.longitude, 
+                                        self.product)
+        start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
+        end_date = dt.datetime.strftime(self.end_date, 'A%Y%j')
+        included_dates = filter(lambda x: start_date <= x <= end_date, 
+                                modis_date_list)
+        if len(included_dates) == 0: raise RuntimeError('No data available '
+                                                        'between requested '
+                                                        'dates!')     
+        date_chunks = map(lambda i: included_dates[i: i + n_per_chunk], 
+                          range(0, len(included_dates), n_per_chunk))
+        return map(lambda x: (x[0], x[-1]), date_chunks)
+    #--------------------------------------------------------------------------
+        
+    #--------------------------------------------------------------------------
+    def get_pixel_by_num(self, pixel_num, mask_by_qc = False):
+        
+        accept_range = range(int(self.nrows * self.ncols))
+        if not pixel_num in accept_range: 
+            raise KeyError('pixel_num must be an int between {0} and {1}'
+                           .format(int(accept_range[0]), int(accept_range[-1])))
+        var_name = '{0}_pixel_{1}'.format(self.band, str(pixel_num))  
+        qc_name = '{0}_pixel_{1}'.format(get_qc_variable_band(self.product,
+                                                              self.band), 
+                                         str(pixel_num))
+        temp_df = self.data[[var_name, qc_name]].copy()
+        if mask_by_qc:
+            threshold = get_qc_threshold(self.product)
+            temp_df.loc[temp_df[qc_name] > threshold, var_name] = np.nan
+        return temp_df
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
+    def plot_data(self, pixel = None):
         
         if int(filter(lambda x: x.isdigit(), self.product)[:2]) == 12:
             print 'Plotting not implemented for land cover class!'
             return
-        qc_band = ','.join(get_qc_variable_band(self.product, self.band))
-        if len(qc_band) == 2: qc_band = None
+        qc_band = get_qc_variable_band(self.product, self.band)
         fig, ax = plt.subplots(1, 1, figsize = (14, 8))
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
@@ -136,23 +194,72 @@ class modis_data(object):
         ax.tick_params(axis = 'x', labelsize = 14)
         ax.set_xlabel('Date', fontsize = 14)
         ax.set_ylabel('{0} ({1})'.format(self.band, self.units), fontsize = 14)
-        if qc_band == None:
-            ax.plot(self.data.index, self.data[self.band], marker = 'o', 
-                    mfc = 'blue', ls = '', alpha = 0.5)
-        else:
-            threshold = get_qc_threshold(self.product)
-            best_df = self.data.loc[self.data[qc_band] == 0]
-            ax.plot(best_df.index, best_df[self.band], marker = 'o', 
-                    mfc = 'green', ls = '', alpha = 0.5)
-            good_df = self.data.loc[(self.data[qc_band] > 0) &
-                                    (self.data[qc_band] <= threshold)]
-            ax.plot(good_df.index, good_df[self.band], marker = 'o', 
-                    mfc = 'orange', ls = '', alpha = 0.5)
-            bad_df = self.data.loc[self.data[qc_band] > threshold]
-            ax.plot(bad_df.index, bad_df[self.band], marker = 'o', mfc = 'red',
-                    ls = '', alpha = 0.5)
+        average_series = self.average_pixels(pixel_quality = 'High')
+        ax.plot(average_series.index, average_series, 
+                label = 'Average ({} pixels)'.format(self.npixels))
+        if pixel:
+            var_name = '{0}_pixel_{1}'.format(self.band, str(pixel))
+            if qc_band == None:
+                ax.plot(self.data.index, self.data[var_name], marker = 'o', 
+                        mfc = 'blue', ls = '', alpha = 0.5)
+            else:
+                qc_name = '{0}_pixel_{1}'.format(qc_band, str(pixel))
+                threshold = get_qc_threshold(self.product)
+                best_df = self.data.loc[self.data[qc_name] == 0]
+                ax.plot(best_df.index, best_df[var_name], marker = 'o', 
+                        mfc = 'green', ls = '', alpha = 0.5)
+                good_df = self.data.loc[(self.data[qc_name] > 0) &
+                                        (self.data[qc_name] <= threshold)]
+                ax.plot(good_df.index, good_df[var_name], marker = 'o', 
+                        mfc = 'orange', ls = '', alpha = 0.5)
+                bad_df = self.data.loc[self.data[qc_name] > threshold]
+                ax.plot(bad_df.index, bad_df[var_name], marker = 'o', 
+                        mfc = 'red', ls = '', alpha = 0.5)
         fig.show()
         return
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
+    def write_to_dir(self, path, append = True):
+        assert os.path.isdir(path)
+        file_name_list = []
+        file_name_list.append(self.site)
+        file_name_list.append(self.product)
+        file_name_list.append(self.band)
+        file_name_str = '{}.csv'.format('_'.join(file_name_list))
+        full_path_str = os.path.join(path, file_name_str)
+        if not append or not os.path.exists(full_path_str):
+            self.data.to_csv(full_path_str, index_label = 'Date')
+            return
+        else:
+            df = pd.read_csv(full_path_str)
+            df.index = map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), 
+                           df.Date)
+            df.drop('Date', axis = 1, inplace = True)
+            df_list = []
+            start_date = min([self.data.index[0], df.index[0]])
+            end_date = max([self.data.index[-1], df.index[-1]])
+            available_dates = map(lambda x: dt.datetime.strptime(x[1:], 
+                                                                 '%Y%j').date(),
+                                  get_date_list(self.latitude, self.longitude,
+                                                self.product))
+            included_dates = filter(lambda x: start_date <= x <= end_date, 
+                                    available_dates)
+            missing_dates = []
+            for date in included_dates:
+                try:
+                    df_list.append(pd.DataFrame(df.loc[date]).transpose())
+                except KeyError:
+                    try:
+                        df_list.append(pd.DataFrame(self.data.loc[date]).transpose())
+                    except KeyError:
+                        missing_dates.append(date)
+            if missing_dates: 
+                dates_str = ', '.join(map(lambda x: dt.datetime.strftime(x, 
+                                                                         '%Y%j'),
+                                          missing_dates))
+                print 'Missing data for {}!'.format(dates_str)
+            pd.concat(df_list).to_csv(full_path_str, index_label = 'Date')
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------    
@@ -167,21 +274,16 @@ class ozflux_data_generator(object):
     #--------------------------------------------------------------------------        
     
     #--------------------------------------------------------------------------
-    def     ozflux_modis_data(self, site, product, band, start_date, end_date,
-                              subset_height_km = 0, subset_width_km = 0):
+    def ozflux_modis_data(self, site, product, band, start_date, end_date,
+                          subset_height_km = 0, subset_width_km = 0,
+                          write_to_file = None):
         
         lat = self.site_list.loc[site, 'Latitude']
         lon = self.site_list.loc[site, 'Longitude']
+        if write_to_file:
+            pass
         return self._subset_class(lat, lon, product, band, start_date, end_date,
                                   subset_height_km, subset_width_km, site)
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
-def _chunk_dates(date_list, n_per_chunk = 8):
-    
-    date_chunks = map(lambda i: date_list[i: i + n_per_chunk], 
-                      range(0, len(date_list), n_per_chunk))
-    return map(lambda x: (x[0], x[-1]), date_chunks)    
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -211,10 +313,28 @@ def get_date_list(lat, lon, product):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+def _get_product_id(product):
+    
+    return int(filter(lambda x: x.isdigit(), product)[:2])    
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def get_product_list():
+    
     client = Client(wsdlurl)
     return map(lambda x: str(x), client.service.getproducts())
 #------------------------------------------------------------------------------
+
+def get_pixel_resolution(product):
+    resolution_dict = {'09': 500,
+                       '11': 1000,
+                       '12': 500, 
+                       '13': 250,
+                       '15': 500,
+                       '16': 500,
+                       '17': 500}
+    id_num = str(_get_product_id(product)).zfill(2)
+    return resolution_dict[id_num]
 
 #--------------------------------------------------------------------------
 def get_product_web_page(product = None):
@@ -235,11 +355,9 @@ def get_product_web_page(product = None):
 #------------------------------------------------------------------------------
 def get_qc_bitmap(product):
     
-    id_num = int(filter(lambda x: x.isdigit(), product)[:2])
-    if id_num <= 13: 
-        return 'XXXXXX00'
-    else:
-        return '000XXXXX'
+    id_num = _get_product_id(product)
+    if id_num <= 13: return 'XXXXXX00'
+    return '000XXXXX'
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -290,7 +408,7 @@ def get_qc_definition(product):
                           '- non-terrestrial biome)'),
                       7: 'Fill Value'}}
 
-    lookup_key = int(filter(lambda x: x.isdigit(), product)[:2])
+    lookup_key = _get_product_id(product)
     idx = filter(lambda x: lookup_key in idx_dict[x], idx_dict.keys())[0]
     return qc_dict[idx]
 #------------------------------------------------------------------------------
@@ -298,9 +416,9 @@ def get_qc_definition(product):
 #------------------------------------------------------------------------------
 def get_qc_threshold(product):
     
-    id_num = int(filter(lambda x: x.isdigit(), product)[:2])
-    threshold = 1 if id_num <= 13 else 3 
-    return threshold
+    id_num = _get_product_id(product)
+    if id_num <= 13: return 1 
+    return 3
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -324,11 +442,14 @@ def get_qc_variable_band(product, band = None):
             qc_var = filter(lambda x: 'day' in x.lower(), qc_var)
         elif 'night' in band.lower(): 
             qc_var = filter(lambda x: 'night' in x.lower(), qc_var)
-    return qc_var
+    try:
+        return ','.join(qc_var)
+    except TypeError:
+        return None
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def _get_subset_data(lat, lon, product, band, start_date, end_date, 
+def get_subset_data(lat, lon, product, band, start_date, end_date, 
                     subset_height_km = 0, subset_width_km = 0):
 
     assert start_date <= end_date
