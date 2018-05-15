@@ -12,7 +12,6 @@ import os
 import pandas as pd
 from suds.client import Client
 import webbrowser
-import xlrd
 import pdb
 
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
@@ -61,6 +60,7 @@ class modis_data(object):
         self.longitude = longitude
         self.product = product
         self.band = band
+        self.qc_band = get_qc_variable_band(product, band)
         self.start_date = start_date
         self.end_date = end_date
         self.subset_height_km = subset_height_km
@@ -73,9 +73,8 @@ class modis_data(object):
     def _compile_data(self, init = False):
 
         grouped_dates = self._find_dates()
-        qc_band = get_qc_variable_band(self.product, self.band)
-        if not qc_band: bands = [self.band]
-        if qc_band: bands = [self.band] + [qc_band]
+        if not self.qc_band: bands = [self.band]
+        if self.qc_band: bands = [self.band] + [self.qc_band]
         df_list = []
         for this_band in bands:
             data_list = []
@@ -103,7 +102,7 @@ class modis_data(object):
                     print '{},'.format(date[1:]),
             df_index = map(lambda x: dt.datetime.strptime(x, 'A%Y%j').date(),
                            date_list)
-            df_cols = map(lambda x: '{0}_pixel_{1}'.format(this_band, str(x)),
+            df_cols = map(lambda x: self._make_name(this_band, x), 
                           range(npixels))
             df_list.append(pd.DataFrame(data_list, 
                                         index = df_index, 
@@ -138,8 +137,8 @@ class modis_data(object):
             if pixel_quality == 'High': threshold = 0
             if pixel_quality == 'Acceptable': threshold = get_qc_threshold(self.product)
             for pixel in xrange(self.npixels):
-                var_str = '{0}_pixel_{1}'.format(self.band, str(pixel))
-                qc_str = '{0}_pixel_{1}'.format(qc_name, str(pixel))
+                var_str = self._make_name(self.band, pixel)
+                qc_str = self._make_name(qc_name, pixel)
                 df.loc[df[qc_str] > threshold, var_str] = np.nan
         var_list = filter(lambda x: self.band in x, df.columns)
         return df[var_list].mean(axis = 1)
@@ -169,10 +168,9 @@ class modis_data(object):
         if not pixel_num in accept_range: 
             raise KeyError('pixel_num must be an int between {0} and {1}'
                            .format(int(accept_range[0]), int(accept_range[-1])))
-        var_name = '{0}_pixel_{1}'.format(self.band, str(pixel_num))  
-        qc_name = '{0}_pixel_{1}'.format(get_qc_variable_band(self.product,
-                                                              self.band), 
-                                         str(pixel_num))
+        var_name = self._make_name(self.band, pixel_num)  
+        qc_name = self._make_name(get_qc_variable_band(self.product, self.band), 
+                                   pixel_num)
         temp_df = self.data[[var_name, qc_name]].copy()
         if mask_by_qc:
             threshold = get_qc_threshold(self.product)
@@ -181,12 +179,17 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
+    def _make_name(self, band, n):
+        
+        return '{0}_pixel_{1}'.format(band, str(n).zfill(2))
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
     def plot_data(self, pixel = None):
         
         if int(filter(lambda x: x.isdigit(), self.product)[:2]) == 12:
             print 'Plotting not implemented for land cover class!'
             return
-        qc_band = get_qc_variable_band(self.product, self.band)
         fig, ax = plt.subplots(1, 1, figsize = (14, 8))
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
@@ -199,11 +202,11 @@ class modis_data(object):
                 label = 'Average ({} pixels)'.format(self.npixels))
         if pixel:
             var_name = '{0}_pixel_{1}'.format(self.band, str(pixel))
-            if qc_band == None:
+            if not self.band:
                 ax.plot(self.data.index, self.data[var_name], marker = 'o', 
                         mfc = 'blue', ls = '', alpha = 0.5)
             else:
-                qc_name = '{0}_pixel_{1}'.format(qc_band, str(pixel))
+                qc_name = '{0}_pixel_{1}'.format(self.qc_band, str(pixel))
                 threshold = get_qc_threshold(self.product)
                 best_df = self.data.loc[self.data[qc_name] == 0]
                 ax.plot(best_df.index, best_df[var_name], marker = 'o', 
@@ -262,30 +265,6 @@ class modis_data(object):
             pd.concat(df_list).to_csv(full_path_str, index_label = 'Date')
 #------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------    
-class ozflux_data_generator(object):
-
-    #--------------------------------------------------------------------------    
-    '''
-    '''
-    def __init__(self, master_file_path):
-        self.site_list = get_ozflux_site_list(master_file_path)
-        self._subset_class = modis_data
-    #--------------------------------------------------------------------------        
-    
-    #--------------------------------------------------------------------------
-    def ozflux_modis_data(self, site, product, band, start_date, end_date,
-                          subset_height_km = 0, subset_width_km = 0,
-                          write_to_file = None):
-        
-        lat = self.site_list.loc[site, 'Latitude']
-        lon = self.site_list.loc[site, 'Longitude']
-        if write_to_file:
-            pass
-        return self._subset_class(lat, lon, product, band, start_date, end_date,
-                                  subset_height_km, subset_width_km, site)
-#------------------------------------------------------------------------------
-
 #------------------------------------------------------------------------------
 def _convert_binary(int_list, product):
     bitmap = get_qc_bitmap(product)
@@ -325,6 +304,7 @@ def get_product_list():
     return map(lambda x: str(x), client.service.getproducts())
 #------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------
 def get_pixel_resolution(product):
     resolution_dict = {'09': 500,
                        '11': 1000,
@@ -335,8 +315,9 @@ def get_pixel_resolution(product):
                        '17': 500}
     id_num = str(_get_product_id(product)).zfill(2)
     return resolution_dict[id_num]
+#------------------------------------------------------------------------------
 
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 def get_product_web_page(product = None):
     
     url_dict = {this_product: '{}_v006'.format(this_product.lower()) 
@@ -433,19 +414,18 @@ def get_qc_variable_band(product, band = None):
                      '17': 'Psn_QC_500m'}
     id_num = filter(lambda x: x.isdigit(), product)[:2]
     qc_var = varnames_dict[id_num]
-    if not id_num == '11':
-        qc_var = [qc_var]
-    else:
+    if id_num == '11':
         if not band:
-            print 'Pass band as kwarg to select QC variable(s)'
+            print ('Product {} has daytime and nighttime qc bands; '
+                   'pass band as kwarg to select QC variable(s)'.format(product))
+            return None
         elif 'day' in band.lower(): 
             qc_var = filter(lambda x: 'day' in x.lower(), qc_var)
-        elif 'night' in band.lower(): 
+        elif 'night' in band.lower():
             qc_var = filter(lambda x: 'night' in x.lower(), qc_var)
-    try:
-        return ','.join(qc_var)
-    except TypeError:
-        return None
+        else:
+            return None
+    return qc_var
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -457,20 +437,4 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
     return client.service.getsubset(lat, lon, product, band, 
                                     start_date, end_date, 
                                     subset_height_km, subset_width_km)
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
-def get_ozflux_site_list(master_file_path):
-    
-    wb = xlrd.open_workbook(master_file_path)
-    sheet = wb.sheet_by_name('Active')
-    header_row = 9
-    header_list = sheet.row_values(header_row)
-    df = pd.DataFrame()
-    for var in ['Site', 'Latitude', 'Longitude']:
-        index_val = header_list.index(var)
-        df[var] = sheet.col_values(index_val, header_row + 1)   
-    df.index = df[header_list[0]]
-    df.drop(header_list[0], axis = 1, inplace = True)
-    return df
-#------------------------------------------------------------------------------        
+#------------------------------------------------------------------------------       
