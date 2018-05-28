@@ -13,18 +13,7 @@ import xlrd
 import pdb
 
 import modis_functions as mf
-reload(mf)
-
-#------------------------------------------------------------------------------    
-class ozflux_data_generator(object):
-
-    #--------------------------------------------------------------------------    
-    '''
-    '''
-    def __init__(self, master_file_path):
-        self.site_list = get_ozflux_site_list(master_file_path)
-        self._subset_class = mf.modis_data
-    #--------------------------------------------------------------------------        
+reload(mf)       
         
 #------------------------------------------------------------------------------
 def get_ozflux_site_list(master_file_path):
@@ -41,3 +30,20 @@ def get_ozflux_site_list(master_file_path):
     df.drop(header_list[0], axis = 1, inplace = True)
     return df
 #------------------------------------------------------------------------------ 
+
+#------------------------------------------------------------------------------    
+def write_site_data(master_file_path, output_path):
+    
+    site_df = get_ozflux_site_list(master_file_path)
+    for site in site_df.index:
+        lat = site_df.loc[site, 'Latitude']
+        lon = site_df.loc[site, 'Longitude']
+        for product in retrieval_dict.keys():
+            for band in retrieval_dict[product]:
+                x = mf.modis_data_by_npixel(lat, lon, product, band, site = site)
+                x.write_to_dir(output_path)
+    pdb.set_trace()
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+retrieval_dict = {'MOD13Q1': ['250m_16_days_NDVI', '250m_16_days_EVI']}

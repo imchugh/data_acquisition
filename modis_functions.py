@@ -69,20 +69,23 @@ class modis_data(object):
         self.subset_height_km = subset_height_km
         self.subset_width_km = subset_width_km
         self.site = site
-        self.data = self._compile_data(init = True)
+        self.data = self._compile_data()
     #-------------------------------------------------------------------------- 
 
     #--------------------------------------------------------------------------
-    def _compile_data(self, init = False):
+    def _compile_data(self):
 
+        init = True
         grouped_dates = self._find_dates()
         if not self.qc_band: bands = [self.band]
         if self.qc_band: bands = [self.band] + [self.qc_band]
         df_list = []
+        site = self.site if self.site else 'Unknown'
+        print 'Retrieving data for {} site:'.format(site)
         for this_band in bands:
             data_list = []
             date_list = []
-            if this_band == self.band: 
+            if this_band == self.band:
                 print ('Fetching primary data from server for dates:')
             else:
                 print ('Fetching QC data from server for dates:')
@@ -111,6 +114,8 @@ class modis_data(object):
                                         index = df_index, 
                                         columns = df_cols))
             print
+        df = pd.concat(df_list, axis = 1)
+        if self.qc_band: df = df[self._reorder_columns(df.columns)]
         if init:
             self.xllcorner = data.xllcorner
             self.yllcorner = data.yllcorner
@@ -121,16 +126,19 @@ class modis_data(object):
             self.centerpixel = npixels / 2
             self.units = data.units
             self.scale = data.scale
-        return pd.concat(df_list, axis = 1)
+            init = False
+        return df
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
-    def average_pixels(self, pixel_quality = None, iqr_filter = False):
+    def do_sample_stats(self, pixel_quality = None, iqr_filter = False):
         
-        if self.npixels == 1: print 'Cannot average single pixel'; return        
+        if self.npixels == 1: print 'Cannot analyse single pixel'; return
         df = pd.concat(map(lambda x: self.get_pixel_by_num(x, pixel_quality), 
                            range(self.npixels)), axis = 1)
-        return df.median(axis = 1)
+        stats_df = df.transpose().describe().transpose()
+        stats_df['median'] = df.median(axis = 1)
+        return stats_df
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
@@ -205,7 +213,7 @@ class modis_data(object):
         ax.tick_params(axis = 'x', labelsize = 14)
         ax.set_xlabel('Date', fontsize = 14)
         ax.set_ylabel('{0} ({1})'.format(self.band, self.units), fontsize = 14)
-        average_series = self.average_pixels(pixel_quality = 'Acceptable')
+        average_series = self.do_sample_stats(pixel_quality = 'Acceptable')['mean']
         ax.plot(average_series.index, average_series, 
                 label = 'Average ({} pixels)'.format(self.npixels))
         if pixel:
@@ -231,6 +239,14 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
+    def _reorder_columns(self, col_names):
+        col_tuples = zip(sorted(filter(lambda x: self.band in x, col_names)),
+                         sorted(filter(lambda x: self.qc_band in x, col_names)))
+        new_order = [val for sublist in col_tuples for val in sublist]
+        return new_order
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
     def write_to_dir(self, path, basic_stats = True, pre_header = None, 
                      append = True):
         
@@ -242,10 +258,13 @@ class modis_data(object):
         file_name_str = '{}.csv'.format('_'.join(file_name_list))
         full_path_str = os.path.join(path, file_name_str)
         write_df = self.data.copy()
-        write_df['{}_Avg'.format(self.band)] = (
-            self.average_pixels(pixel_quality = 'Acceptable'))
+        if basic_stats:
+            write_df = write_df.join(self.do_sample_stats(pixel_quality = 'Acceptable'))
         if not append or not os.path.exists(full_path_str):
-            write_df.to_csv(full_path_str, index_label = 'Date')
+            with open(full_path_str, 'w') as f:
+                if pre_header: 
+                    f.write(pre_header)
+                write_df.to_csv(full_path_str, index_label = 'Date')
             return
         else:
             df = pd.read_csv(full_path_str)
@@ -290,7 +309,7 @@ Inherits from modis_data class above (see docstring), except:
 class modis_data_by_npixel(modis_data):
     
     def __init__(self, latitude, longitude, product, band, start_date = None, 
-                 end_date = None, pixels_per_side = 3):
+                 end_date = None, pixels_per_side = 3, site = None):
         
         try:
             assert isinstance(pixels_per_side, int)
@@ -301,7 +320,7 @@ class modis_data_by_npixel(modis_data):
         resolution_km = self._get_length_from_pixel_n(product, pixels_per_side)
         modis_data.__init__(self, latitude, longitude, product, band, 
                             start_date, end_date, resolution_km,
-                            resolution_km)
+                            resolution_km, site)
         self.data = self._subset_dataframe(pixels_per_side ** 2)
         self.npixels = pixels_per_side ** 2
         self.nrows = pixels_per_side
@@ -337,6 +356,7 @@ class modis_data_by_npixel(modis_data):
             new_data_names = new_data_names + new_qc_names
         new_df = self.data[data_names].copy()
         new_df.columns = new_data_names
+        new_df = new_df[self._reorder_columns(new_df.columns)]
         return new_df
 #------------------------------------------------------------------------------
 
