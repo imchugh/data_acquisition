@@ -11,6 +11,7 @@ import xlrd
 import zipfile
 from pytz import timezone
 from timezonefinder import TimezoneFinder as tzf
+import pdb
 
 # Import custom modules
 import grunt_email
@@ -340,7 +341,7 @@ ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 xlname = '/mnt/OzFlux/Sites/site_master.xls'
 data_path = "/rdsi/market/aws_ftp"
-logfile_path = "/mnt/OzFlux/Logfiles/AWS"
+logfile_path = "/home/ian/Desktop/Logfiles/AWS"
 mail_recipients = ['ian.mchugh@monash.edu']
 
 header_list = ['hm',

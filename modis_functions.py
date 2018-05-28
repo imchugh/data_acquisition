@@ -6,6 +6,7 @@ Created on Tue Jan 16 14:38:30 2018
 @author: ian
 """
 import datetime as dt
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -33,8 +34,10 @@ class modis_data(object):
         * band (str): MODIS product band for which to retrieve data (use the 
           'get_band_list(<product>)' function for a list of the available 
           bands)
-        * start_date (python datetime): first date for which data is required
-        * end_date (python datetime): last date for which data is required
+        * start_date (python datetime or None): first date for which data is 
+          required, or if None, first date available on server
+        * end_date (python datetime): last date for which data is required,
+          or if None, last date available on server
         * subset_height_km (int): distance in kilometres (centred on location)
           from upper to lower boundary of subset
         * subset_width_km (int): distance in kilometres (centred on location)
@@ -47,7 +50,7 @@ class modis_data(object):
             *
     '''
     def __init__(self, latitude, longitude, product, band, 
-                 start_date, end_date,
+                 start_date = None, end_date = None,
                  subset_height_km = 0, subset_width_km = 0, site = None):
         
         if not product in get_product_list():
@@ -122,26 +125,12 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
-    def average_pixels(self, pixel_quality = None):
+    def average_pixels(self, pixel_quality = None, iqr_filter = False):
         
-        if pixel_quality: 
-            try:
-                assert pixel_quality in ['High', 'Acceptable']
-            except:
-                raise KeyError('pixel_quality options are: "High", ' 
-                               ' "Acceptable" or None')
-        if self.npixels == 1: return
-        df = self.data.copy()
-        qc_name = get_qc_variable_band(self.product)
-        if qc_name and pixel_quality:
-            if pixel_quality == 'High': threshold = 0
-            if pixel_quality == 'Acceptable': threshold = get_qc_threshold(self.product)
-            for pixel in xrange(self.npixels):
-                var_str = self._make_name(self.band, pixel)
-                qc_str = self._make_name(qc_name, pixel)
-                df.loc[df[qc_str] > threshold, var_str] = np.nan
-        var_list = filter(lambda x: self.band in x, df.columns)
-        return df[var_list].mean(axis = 1)
+        if self.npixels == 1: print 'Cannot average single pixel'; return        
+        df = pd.concat(map(lambda x: self.get_pixel_by_num(x, pixel_quality), 
+                           range(self.npixels)), axis = 1)
+        return df.median(axis = 1)
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
@@ -149,8 +138,14 @@ class modis_data(object):
         
         modis_date_list = get_date_list(self.latitude, self.longitude, 
                                         self.product)
-        start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
-        end_date = dt.datetime.strftime(self.end_date, 'A%Y%j')
+        if not self.start_date: 
+            start_date = modis_date_list[0]
+        else:
+            start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
+        if not self.end_date:
+            end_date = modis_date_list[-1]
+        else:
+            end_date = dt.datetime.strftime(self.end_date, 'A%Y%j')
         included_dates = filter(lambda x: start_date <= x <= end_date, 
                                 modis_date_list)
         if len(included_dates) == 0: raise RuntimeError('No data available '
@@ -162,20 +157,33 @@ class modis_data(object):
     #--------------------------------------------------------------------------
         
     #--------------------------------------------------------------------------
-    def get_pixel_by_num(self, pixel_num, mask_by_qc = False):
+    def get_pixel_by_num(self, pixel_num, pixel_quality = None):
         
-        accept_range = range(int(self.nrows * self.ncols))
+        accept_range = range(self.npixels)
         if not pixel_num in accept_range: 
             raise KeyError('pixel_num must be an int between {0} and {1}'
                            .format(int(accept_range[0]), int(accept_range[-1])))
-        var_name = self._make_name(self.band, pixel_num)  
-        qc_name = self._make_name(get_qc_variable_band(self.product, self.band), 
-                                   pixel_num)
-        temp_df = self.data[[var_name, qc_name]].copy()
-        if mask_by_qc:
-            threshold = get_qc_threshold(self.product)
-            temp_df.loc[temp_df[qc_name] > threshold, var_name] = np.nan
-        return temp_df
+        if pixel_quality: 
+            try:
+                assert pixel_quality in ['High', 'Acceptable']
+            except:
+                raise KeyError('pixel_quality options are: "High", ' 
+                               ' "Acceptable" or None')
+        var_name = self._make_name(self.band, pixel_num)
+        if not pixel_quality: return self.data[var_name].copy()
+        qc_band = get_qc_variable_band(self.product, self.band)
+        if not qc_band: 
+            print ('No qc variable available for this modis product; '
+                   'returning unfiltered product')
+            return self.data[var_name].copy()
+        else:
+            qc_name = self._make_name(qc_band, pixel_num)
+            if pixel_quality == 'High': threshold = 0
+            if pixel_quality == 'Acceptable': 
+                threshold = get_qc_threshold(self.product)
+            df = self.data.copy()
+            df.loc[df[qc_name] > threshold, var_name] = np.nan
+            return df[var_name]
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
@@ -197,7 +205,7 @@ class modis_data(object):
         ax.tick_params(axis = 'x', labelsize = 14)
         ax.set_xlabel('Date', fontsize = 14)
         ax.set_ylabel('{0} ({1})'.format(self.band, self.units), fontsize = 14)
-        average_series = self.average_pixels(pixel_quality = 'High')
+        average_series = self.average_pixels(pixel_quality = 'Acceptable')
         ax.plot(average_series.index, average_series, 
                 label = 'Average ({} pixels)'.format(self.npixels))
         if pixel:
@@ -223,16 +231,21 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
-    def write_to_dir(self, path, append = True):
+    def write_to_dir(self, path, basic_stats = True, pre_header = None, 
+                     append = True):
+        
         assert os.path.isdir(path)
         file_name_list = []
-        file_name_list.append(self.site)
+        if self.site: file_name_list.append(self.site)
         file_name_list.append(self.product)
         file_name_list.append(self.band)
         file_name_str = '{}.csv'.format('_'.join(file_name_list))
         full_path_str = os.path.join(path, file_name_str)
+        write_df = self.data.copy()
+        write_df['{}_Avg'.format(self.band)] = (
+            self.average_pixels(pixel_quality = 'Acceptable'))
         if not append or not os.path.exists(full_path_str):
-            self.data.to_csv(full_path_str, index_label = 'Date')
+            write_df.to_csv(full_path_str, index_label = 'Date')
             return
         else:
             df = pd.read_csv(full_path_str)
@@ -240,8 +253,8 @@ class modis_data(object):
                            df.Date)
             df.drop('Date', axis = 1, inplace = True)
             df_list = []
-            start_date = min([self.data.index[0], df.index[0]])
-            end_date = max([self.data.index[-1], df.index[-1]])
+            start_date = min([write_df.index[0], df.index[0]])
+            end_date = max([write_df.index[-1], df.index[-1]])
             available_dates = map(lambda x: dt.datetime.strptime(x[1:], 
                                                                  '%Y%j').date(),
                                   get_date_list(self.latitude, self.longitude,
@@ -254,7 +267,7 @@ class modis_data(object):
                     df_list.append(pd.DataFrame(df.loc[date]).transpose())
                 except KeyError:
                     try:
-                        df_list.append(pd.DataFrame(self.data.loc[date]).transpose())
+                        df_list.append(pd.DataFrame(write_df.loc[date]).transpose())
                     except KeyError:
                         missing_dates.append(date)
             if missing_dates: 
@@ -263,6 +276,68 @@ class modis_data(object):
                                           missing_dates))
                 print 'Missing data for {}!'.format(dates_str)
             pd.concat(df_list).to_csv(full_path_str, index_label = 'Date')
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+'''
+Inherits from modis_data class above (see docstring), except:
+    * subset_width_km and subset_height_km args are omitted, and instead a 
+      single argument ("pixels_per_side") is passed, and the appropriate pixel
+      matrix is returned with the same attributes and methods as parent class -
+      note that the pixels_per_side argument must be an odd-numbered integer 
+      so that the pixel containing the passed coordinates is the center pixel
+'''
+class modis_data_by_npixel(modis_data):
+    
+    def __init__(self, latitude, longitude, product, band, start_date = None, 
+                 end_date = None, pixels_per_side = 3):
+        
+        try:
+            assert isinstance(pixels_per_side, int)
+            assert pixels_per_side % 2 != 0
+        except AssertionError:
+            raise TypeError('Arg "pixels_per_side" must be an odd-numbered '
+                            'integer')
+        resolution_km = self._get_length_from_pixel_n(product, pixels_per_side)
+        modis_data.__init__(self, latitude, longitude, product, band, 
+                            start_date, end_date, resolution_km,
+                            resolution_km)
+        self.data = self._subset_dataframe(pixels_per_side ** 2)
+        self.npixels = pixels_per_side ** 2
+        self.nrows = pixels_per_side
+        self.ncols = pixels_per_side
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------    
+    def _get_length_from_pixel_n(self, product, pixels_per_side):
+    
+        pixel_res = get_pixel_resolution(product)
+        center_edge_min = math.ceil((pixels_per_side - 2) * pixel_res / 2)
+        return int(math.ceil(center_edge_min / 1000))
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------    
+    def _subset_dataframe(self, n_pixels_required):
+    
+        center_pixel = self.npixels / 2
+        start_pixel_n = center_pixel - n_pixels_required / 2
+        end_pixel_n = center_pixel + n_pixels_required / 2
+        data_names = sorted(filter(lambda x: self.band in x, 
+                                   self.data.columns))
+        data_names = data_names[start_pixel_n: end_pixel_n + 1]
+        new_data_names = map(lambda x: self._make_name(self.band, x),
+                             range(n_pixels_required))
+        if self.qc_band:
+            qc_names = sorted(filter(lambda x: self.qc_band in x, 
+                                     self.data.columns))
+            qc_names = qc_names[start_pixel_n: end_pixel_n + 1]
+            new_qc_names = map(lambda x: self._make_name(self.qc_band, x),
+                               range(n_pixels_required))
+            data_names = data_names + qc_names 
+            new_data_names = new_data_names + new_qc_names
+        new_df = self.data[data_names].copy()
+        new_df.columns = new_data_names
+        return new_df
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -438,3 +513,19 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
                                     start_date, end_date, 
                                     subset_height_km, subset_width_km)
 #------------------------------------------------------------------------------       
+    
+#--------------------------------------------------------------------------
+def median_temporal_filter(series, n_sample = 15):
+    
+    data_list = []
+    for i in range(0, len(series), n_sample):
+        sub_series = series.iloc[i: i + n_sample].copy()
+        iqr = sub_series.quantile(0.75) - sub_series.quantile(0.25)
+        med = sub_series.median()
+        inlier_upper_bound = med + iqr * 2
+        inlier_lower_bound = med - iqr * 2
+        sub_series[(sub_series<inlier_lower_bound) | 
+                   (sub_series>inlier_upper_bound)] = np.nan
+        data_list.append(sub_series)
+    return pd.concat(data_list)
+#--------------------------------------------------------------------------

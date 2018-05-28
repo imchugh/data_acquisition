@@ -11,34 +11,27 @@ import os
 import pandas as pd
 import pdb
 
-#ftp_server = 'ftp.ncdc.noaa.gov'
-#ftp_dir = 'pub/data/noaa/'
-#f = 'isd-history.txt'
-#target_dir = '/home/ian/Temp'
-#file_name = 'ISD_station_list.txt'
-#
-#
-#ftp = ftplib.FTP(server)
-#local_filename = os.path.join(target_dir, file_name)
-##f_str = 'RETR {0}'.format(in_file)
-##lf = open(local_filename, "wb")
-##ftp.retrbinary("RETR " + filename, lf.write, 8*1024)
-##lf.close()
-#
-#ftp.nlst(ftp_dir)
-#
-#ftp.close()
+ftp_server = 'ftp.ncdc.noaa.gov'
+ftp_dir = 'pub/data/noaa/'
+output_dir = '/home/ian/Temp/'
+file_name = 'isd-history.txt'
 
+ftp = ftplib.FTP(ftp_server)
+ftp.login()
+file_list = ftp.nlst(ftp_dir)
+f_str = 'RETR {0}'.format(os.path.join(ftp_dir, file_name))
+with open(os.path.join(output_dir, file_name), 'wb') as f:
+    ftp.retrbinary(f_str, f.write, 8*1024)
+ftp.close()
 
 l = [[0, 7], [7, 13], [13, 43], [43, 51], [51, 57], [57, 65], [65, 74],
      [74, 82], [82, 91], [91, -1]]
 float_cols = [5, 7]
 
-fname = '/home/ian/Temp/isd-history.txt'
 header_line = 20
 data_list = []
 counter = 0
-with open(fname) as f:
+with open(os.path.join(output_dir, file_name)) as f:
     for i, line in enumerate(f):
         if i < header_line: continue
         if i == header_line: 
@@ -55,15 +48,3 @@ for col in ['LAT', 'LON', 'ELEV(M)']:
     df.loc[:, col] = pd.to_numeric(df[col])
     
 aus_df = df[df['CTRY ST'] == 'AS']
-
-
-#header = test[header_line]
-
-#test = filter(lambda x: len(x) == 100, test)
-
-    
-#bad_df = pd.read_csv(f, skiprows = 20, error_bad_lines = False)
-#header = bad_df.columns.item().split()
-
-#l = map(lambda x: bad_df.iloc[x].item().split(), xrange(len(bad_df)))
-#df = pd.DataFrame(l, columns = header)
