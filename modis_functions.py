@@ -252,7 +252,9 @@ class modis_data(object):
         
         assert os.path.isdir(path)
         file_name_list = []
-        if self.site: file_name_list.append(self.site)
+        if self.site: 
+            site_str = '_'.join(self.site.split(' '))
+            file_name_list.append(site_str)
         file_name_list.append(self.product)
         file_name_list.append(self.band)
         file_name_str = '{}.csv'.format('_'.join(file_name_list))
