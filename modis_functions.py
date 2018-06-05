@@ -13,8 +13,6 @@ import os
 import pandas as pd
 from suds.client import Client
 import webbrowser
-import pdb
-import csv
 
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
            'MODIS_soapservice.wsdl')
@@ -80,8 +78,6 @@ class modis_data(object):
         init = True
         grouped_dates = self._find_dates()
         bands = filter(lambda x: not x is None, [self.band, self.qc_band])
-#        if not self.qc_band: bands = [self.band]
-#        if self.band and self.qc_band: bands = [self.band] + [self.qc_band]
         df_list = []
         site = self.site if self.site else 'Unknown'
         print 'Retrieving data for {} site:'.format(site)
@@ -318,16 +314,15 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
 #------------------------------------------------------------------------------
-'''
-Inherits from modis_data class above (see docstring), except:
-    * subset_width_km and subset_height_km args are omitted, and instead a 
-      single argument ("pixels_per_side") is passed, and the appropriate pixel
-      matrix is returned with the same attributes and methods as parent class -
-      note that the pixels_per_side argument must be an odd-numbered integer 
-      so that the pixel containing the passed coordinates is the center pixel
-'''
 class modis_data_by_npixel(modis_data):
-    
+    '''
+    Inherits from modis_data class above (see docstring), except:
+        * subset_width_km and subset_height_km args are omitted, and instead a 
+          single argument ("pixels_per_side") is passed, and the appropriate pixel
+          matrix is returned with the same attributes and methods as parent class -
+          note that the pixels_per_side argument must be an odd-numbered integer 
+          so that the pixel containing the passed coordinates is the center pixel
+    '''    
     def __init__(self, latitude, longitude, product, band, start_date = None, 
                  end_date = None, pixels_per_side = 3, site = None):
         
@@ -361,22 +356,18 @@ class modis_data_by_npixel(modis_data):
         center_pixel = self.npixels / 2
         start_pixel_n = center_pixel - n_pixels_required / 2
         end_pixel_n = center_pixel + n_pixels_required / 2
-        pdb.set_trace()
-        data_names = sorted(filter(lambda x: self.band in x, 
-                                   self.data.columns))
-        data_names = data_names[start_pixel_n: end_pixel_n + 1]
-        new_data_names = map(lambda x: self._make_name(self.band, x),
-                             range(n_pixels_required))
-        if self.qc_band:
-            qc_names = sorted(filter(lambda x: self.qc_band in x, 
-                                     self.data.columns))
-            qc_names = qc_names[start_pixel_n: end_pixel_n + 1]
-            new_qc_names = map(lambda x: self._make_name(self.qc_band, x),
-                               range(n_pixels_required))
-            data_names = data_names + qc_names 
-            new_data_names = new_data_names + new_qc_names
-        new_df = self.data[data_names].copy()
-        new_df.columns = new_data_names
+        bands = filter(lambda x: not x is None, [self.band, self.qc_band])
+        names_list = []
+        new_names_list = []
+        for band in bands:
+            names = sorted(filter(lambda x: band in x, self.data.columns))
+            names = names[start_pixel_n: end_pixel_n + 1]
+            names_list = names_list + names
+            new_names = map(lambda x: self._make_name(band, x),
+                            range(n_pixels_required))
+            new_names_list = new_names_list + new_names
+        new_df = self.data[names_list].copy()
+        new_df.columns = new_names_list
         new_df = new_df[self._reorder_columns(new_df.columns)]
         return new_df
 #------------------------------------------------------------------------------
