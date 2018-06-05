@@ -14,6 +14,7 @@ import pandas as pd
 from suds.client import Client
 import webbrowser
 import pdb
+import csv
 
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
            'MODIS_soapservice.wsdl')
@@ -64,6 +65,7 @@ class modis_data(object):
         self.product = product
         self.band = band
         self.qc_band = get_qc_variable_band(product, band)
+        if self.band == self.qc_band: self.band = None
         self.start_date = start_date
         self.end_date = end_date
         self.subset_height_km = subset_height_km
@@ -77,8 +79,9 @@ class modis_data(object):
 
         init = True
         grouped_dates = self._find_dates()
-        if not self.qc_band: bands = [self.band]
-        if self.qc_band: bands = [self.band] + [self.qc_band]
+        bands = filter(lambda x: not x is None, [self.band, self.qc_band])
+#        if not self.qc_band: bands = [self.band]
+#        if self.band and self.qc_band: bands = [self.band] + [self.qc_band]
         df_list = []
         site = self.site if self.site else 'Unknown'
         print 'Retrieving data for {} site:'.format(site)
@@ -87,7 +90,7 @@ class modis_data(object):
             date_list = []
             if this_band == self.band:
                 print ('Fetching primary data from server for dates:')
-            else:
+            elif this_band == self.qc_band:
                 print ('Fetching QC data from server for dates:')
             for date_pair in grouped_dates:
                 data = get_subset_data(self.latitude, self.longitude, 
@@ -102,6 +105,7 @@ class modis_data(object):
                     date_list.append(date)
                     if this_band == self.band: 
                         if data.scale: vals = map(lambda x: x * data.scale, vals)
+                        vals = map(lambda x: round(x, 4), vals)
                     else:
                         vals = _convert_binary(vals, self.product)
                     data_list.append(vals)
@@ -115,7 +119,7 @@ class modis_data(object):
                                         columns = df_cols))
             print
         df = pd.concat(df_list, axis = 1)
-        if self.qc_band: df = df[self._reorder_columns(df.columns)]
+        df = df[self._reorder_columns(df.columns)] 
         if init:
             self.xllcorner = data.xllcorner
             self.yllcorner = data.yllcorner
@@ -240,17 +244,20 @@ class modis_data(object):
     
     #--------------------------------------------------------------------------
     def _reorder_columns(self, col_names):
+        if not self.band and self.qc_band: return col_names
         col_tuples = zip(sorted(filter(lambda x: self.band in x, col_names)),
                          sorted(filter(lambda x: self.qc_band in x, col_names)))
         new_order = [val for sublist in col_tuples for val in sublist]
         return new_order
     #--------------------------------------------------------------------------
-    
-    #--------------------------------------------------------------------------
-    def write_to_dir(self, path, basic_stats = True, pre_header = None, 
-                     append = True):
         
-        assert os.path.isdir(path)
+    #--------------------------------------------------------------------------
+    def write_to_file(self, path_to_dir, pre_header = None):
+        
+        try:
+            assert os.path.isdir(path_to_dir)
+        except AssertionError:
+            raise IOError('Specified path does not exist')
         file_name_list = []
         if self.site: 
             site_str = '_'.join(self.site.split(' '))
@@ -258,47 +265,58 @@ class modis_data(object):
         file_name_list.append(self.product)
         file_name_list.append(self.band)
         file_name_str = '{}.csv'.format('_'.join(file_name_list))
-        full_path_str = os.path.join(path, file_name_str)
-        write_df = self.data.copy()
-        if basic_stats:
-            write_df = write_df.join(self.do_sample_stats(pixel_quality = 'Acceptable'))
-        if not append or not os.path.exists(full_path_str):
-            with open(full_path_str, 'w') as f:
-                if pre_header: 
-                    f.write(pre_header)
-                write_df.to_csv(full_path_str, index_label = 'Date')
-            return
+        target_file_path = os.path.join(path_to_dir, file_name_str)
+        df = self.data.copy().join(self.do_sample_stats(pixel_quality = 
+                                                        'Acceptable'))        
+        if not os.path.isfile(target_file_path):
+            self._write_to_new_file(target_file_path, df, pre_header)
         else:
-            df = pd.read_csv(full_path_str)
-            df.index = map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), 
-                           df.Date)
-            df.drop('Date', axis = 1, inplace = True)
-            df_list = []
-            start_date = min([write_df.index[0], df.index[0]])
-            end_date = max([write_df.index[-1], df.index[-1]])
-            available_dates = map(lambda x: dt.datetime.strptime(x[1:], 
-                                                                 '%Y%j').date(),
-                                  get_date_list(self.latitude, self.longitude,
-                                                self.product))
-            included_dates = filter(lambda x: start_date <= x <= end_date, 
-                                    available_dates)
-            missing_dates = []
-            for date in included_dates:
-                try:
-                    df_list.append(pd.DataFrame(df.loc[date]).transpose())
-                except KeyError:
-                    try:
-                        df_list.append(pd.DataFrame(write_df.loc[date]).transpose())
-                    except KeyError:
-                        missing_dates.append(date)
-            if missing_dates: 
-                dates_str = ', '.join(map(lambda x: dt.datetime.strftime(x, 
-                                                                         '%Y%j'),
-                                          missing_dates))
-                print 'Missing data for {}!'.format(dates_str)
-            pd.concat(df_list).to_csv(full_path_str, index_label = 'Date')
-#------------------------------------------------------------------------------
+            if pre_header: print 'File exists - ignoring passed pre-header'
+            self._write_to_existing_file(target_file_path, df)
+    #--------------------------------------------------------------------------    
 
+    #--------------------------------------------------------------------------
+    def _write_to_new_file(self, target_file_path, df, pre_header = None):
+
+        if pre_header: 
+            if isinstance(pre_header, list):
+                if filter(lambda x: not isinstance(x, str), pre_header):
+                    raise TypeError('All items in pre_header must be of type str')
+                pre_header = '\n'.join(pre_header) + '\n'
+            else:
+                raise TypeError('pre_header must be of type list')
+        if pre_header:
+            with open(target_file_path, 'w') as f:
+                for line in pre_header:
+                    f.write(line)
+                df.to_csv(f, index_label = 'Date')
+        else:
+            df.to_csv(f, index_label = 'Date')
+        return
+    #--------------------------------------------------------------------------
+        
+    #--------------------------------------------------------------------------
+    def _write_to_existing_file(self, target_file_path, df):
+        
+        with open(target_file_path) as f:
+            header_list = []
+            for i, line in enumerate(f):
+                if line.split(',')[0] == 'Date': break
+                header_list.append(line)
+        old_df = pd.read_csv(target_file_path, skiprows = range(i))
+        old_df.index = map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), 
+                           old_df.Date)
+        old_df.drop('Date', axis = 1, inplace = True)
+        all_df = pd.concat([old_df, df])
+        all_df.drop_duplicates(inplace = True)
+        all_df = all_df.loc[~all_df.index.duplicated(keep = 'last')]
+        all_df.sort_index(inplace = True)
+        with open(target_file_path, 'w') as f:
+            for line in header_list:
+                f.write(line)
+            all_df.to_csv(f, index_label = 'Date')
+    #--------------------------------------------------------------------------
+    
 #------------------------------------------------------------------------------
 '''
 Inherits from modis_data class above (see docstring), except:
@@ -343,6 +361,7 @@ class modis_data_by_npixel(modis_data):
         center_pixel = self.npixels / 2
         start_pixel_n = center_pixel - n_pixels_required / 2
         end_pixel_n = center_pixel + n_pixels_required / 2
+        pdb.set_trace()
         data_names = sorted(filter(lambda x: self.band in x, 
                                    self.data.columns))
         data_names = data_names[start_pixel_n: end_pixel_n + 1]
@@ -534,20 +553,4 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
     return client.service.getsubset(lat, lon, product, band, 
                                     start_date, end_date, 
                                     subset_height_km, subset_width_km)
-#------------------------------------------------------------------------------       
-    
-#--------------------------------------------------------------------------
-def median_temporal_filter(series, n_sample = 15):
-    
-    data_list = []
-    for i in range(0, len(series), n_sample):
-        sub_series = series.iloc[i: i + n_sample].copy()
-        iqr = sub_series.quantile(0.75) - sub_series.quantile(0.25)
-        med = sub_series.median()
-        inlier_upper_bound = med + iqr * 2
-        inlier_lower_bound = med - iqr * 2
-        sub_series[(sub_series<inlier_lower_bound) | 
-                   (sub_series>inlier_upper_bound)] = np.nan
-        data_list.append(sub_series)
-    return pd.concat(data_list)
-#--------------------------------------------------------------------------
+#------------------------------------------------------------------------------
