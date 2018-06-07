@@ -50,7 +50,7 @@ def read_from_existing_file(target_file_path):
 # Main program
 #------------------------------------------------------------------------------
     
-master_file_path = '/mnt/Ozflux/Sites/site_master.xls'
+master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 output_path = '/rdsi/market/MODIS'
 drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3',
                                'Land_Cover_Type_1_Secondary', 
