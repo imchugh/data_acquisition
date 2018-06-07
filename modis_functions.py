@@ -14,6 +14,8 @@ import pandas as pd
 from suds.client import Client
 import webbrowser
 
+import pdb
+
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
            'MODIS_soapservice.wsdl')
 
@@ -46,7 +48,11 @@ class modis_data(object):
         * MODIS data class containing the following:
             * band (attribute): MODIS band selected for retrieval
             * cellsize (attribute): actual width of pixel in m
-            *
+            * centerpixel (attribute): number of pixel containing 
+              user-specified coordinates
+            * data (attribute): pandas dataframe containing primary and qc data 
+              (where applicable) for user-specified product and band
+            * 
     '''
     def __init__(self, latitude, longitude, product, band, 
                  start_date = None, end_date = None,
@@ -80,7 +86,8 @@ class modis_data(object):
         bands = filter(lambda x: not x is None, [self.band, self.qc_band])
         df_list = []
         site = self.site if self.site else 'Unknown'
-        print 'Retrieving data for {} site:'.format(site)
+        print ('Retrieving data for {0} site (product: {1}, band: {2}):'
+               .format(site, self.product, self.band))
         for this_band in bands:
             data_list = []
             date_list = []
@@ -100,7 +107,8 @@ class modis_data(object):
                     date = str(line.split(',')[2])
                     date_list.append(date)
                     if this_band == self.band: 
-                        if data.scale: vals = map(lambda x: x * data.scale, vals)
+                        if (data.scale and not 'QC' in this_band): 
+                            vals = map(lambda x: x * data.scale, vals)
                         vals = map(lambda x: round(x, 4), vals)
                     else:
                         vals = _convert_binary(vals, self.product)
@@ -131,9 +139,12 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
-    def do_sample_stats(self, pixel_quality = None, iqr_filter = False):
+    def do_sample_stats(self, pixel_quality = None):
         
         if self.npixels == 1: print 'Cannot analyse single pixel'; return
+        if not self.qc_band:
+            print ('No qc variable available for this modis product; '
+           'returning unfiltered product')
         df = pd.concat(map(lambda x: self.get_pixel_by_num(x, pixel_quality), 
                            range(self.npixels)), axis = 1)
         stats_df = df.transpose().describe().transpose()
@@ -181,8 +192,6 @@ class modis_data(object):
         if not pixel_quality: return self.data[var_name].copy()
         qc_band = get_qc_variable_band(self.product, self.band)
         if not qc_band: 
-            print ('No qc variable available for this modis product; '
-                   'returning unfiltered product')
             return self.data[var_name].copy()
         else:
             qc_name = self._make_name(qc_band, pixel_num)
@@ -240,13 +249,28 @@ class modis_data(object):
     
     #--------------------------------------------------------------------------
     def _reorder_columns(self, col_names):
-        if not self.band and self.qc_band: return col_names
-        col_tuples = zip(sorted(filter(lambda x: self.band in x, col_names)),
-                         sorted(filter(lambda x: self.qc_band in x, col_names)))
+        if not (self.band and self.qc_band): return col_names
+        try:
+            col_tuples = zip(sorted(filter(lambda x: self.band in x, col_names)),
+                             sorted(filter(lambda x: self.qc_band in x, col_names)))
+        except TypeError:
+            pdb.set_trace()
         new_order = [val for sublist in col_tuples for val in sublist]
         return new_order
     #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
+    def write_file_name(self):
         
+        file_name_list = []
+        if self.site: 
+            site_str = '_'.join(self.site.split(' '))
+            file_name_list.append(site_str)
+        file_name_list.append(self.product)
+        file_name_list.append(self.band)
+        return '{}.csv'.format('_'.join(file_name_list))
+    #--------------------------------------------------------------------------    
+    
     #--------------------------------------------------------------------------
     def write_to_file(self, path_to_dir, pre_header = None):
         
@@ -254,13 +278,7 @@ class modis_data(object):
             assert os.path.isdir(path_to_dir)
         except AssertionError:
             raise IOError('Specified path does not exist')
-        file_name_list = []
-        if self.site: 
-            site_str = '_'.join(self.site.split(' '))
-            file_name_list.append(site_str)
-        file_name_list.append(self.product)
-        file_name_list.append(self.band)
-        file_name_str = '{}.csv'.format('_'.join(file_name_list))
+        file_name_str = self.write_file_name()
         target_file_path = os.path.join(path_to_dir, file_name_str)
         df = self.data.copy().join(self.do_sample_stats(pixel_quality = 
                                                         'Acceptable'))        
@@ -287,7 +305,7 @@ class modis_data(object):
                     f.write(line)
                 df.to_csv(f, index_label = 'Date')
         else:
-            df.to_csv(f, index_label = 'Date')
+            df.to_csv(target_file_path, index_label = 'Date')
         return
     #--------------------------------------------------------------------------
         
@@ -526,10 +544,10 @@ def get_qc_variable_band(product, band = None):
             print ('Product {} has daytime and nighttime qc bands; '
                    'pass band as kwarg to select QC variable(s)'.format(product))
             return None
-        elif 'day' in band.lower(): 
-            qc_var = filter(lambda x: 'day' in x.lower(), qc_var)
+        elif 'day' in band.lower():
+            qc_var = filter(lambda x: 'day' in x.lower(), qc_var)[0]
         elif 'night' in band.lower():
-            qc_var = filter(lambda x: 'night' in x.lower(), qc_var)
+            qc_var = filter(lambda x: 'night' in x.lower(), qc_var)[0]
         else:
             return None
     return qc_var
