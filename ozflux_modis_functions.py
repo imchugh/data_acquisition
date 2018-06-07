@@ -64,7 +64,7 @@ for site in site_df.index:
     if not os.path.isdir(site_dir_path): os.mkdir(site_dir_path)
     lat = site_df.loc[site, 'Latitude']
     lon = site_df.loc[site, 'Longitude']
-    for product in ['MOD11A2']:#product_list:
+    for product in product_list:
         band_list = mf.get_band_list(product)
         if product in drop_bands_dict.keys():
             for band in drop_bands_dict[product]:
