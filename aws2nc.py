@@ -431,8 +431,8 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             ncfile = qcio.nc_open_write(ncname)
             qcio.nc_write_series(ncfile,ds_all,ndims=1)
             logging.info("Finished site: "+site_name)
-    except:
-        continue
+        except:
+            continue
 #------------------------------------------------------------------------------
 
 ###############################################################################
