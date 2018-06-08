@@ -530,7 +530,7 @@ def get_qc_threshold(product):
 #------------------------------------------------------------------------------
 def get_qc_variable_band(product, band = None):
     
-    varnames_dict = {'9': 'sur_refl_qc_500m',
+    varnames_dict = {'09': 'sur_refl_qc_500m',
                      '11': ['QC_Day', 'QC_Night'],
                      '12': None,
                      '13': '250m_16_days_VI_Quality',
