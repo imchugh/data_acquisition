@@ -81,7 +81,6 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     def _compile_data(self):
 
-        init = True
         grouped_dates = self._find_dates()
         bands = filter(lambda x: not x is None, [self.band, self.qc_band])
         df_list = []
@@ -124,18 +123,16 @@ class modis_data(object):
             print
         df = pd.concat(df_list, axis = 1)
         df = df[self._reorder_columns(df.columns)] 
-        if init:
-            self.xllcorner = data.xllcorner
-            self.yllcorner = data.yllcorner
-            self.cellsize = data.cellsize
-            self.nrows = data.nrows
-            self.ncols = data.ncols
-            self.npixels = npixels
-            self.centerpixel = npixels / 2
-            self.units = data.units
-            self.scale = data.scale
-            self.valid_rows = len(df)
-            init = False
+        self.xllcorner = data.xllcorner
+        self.yllcorner = data.yllcorner
+        self.cellsize = data.cellsize
+        self.nrows = data.nrows
+        self.ncols = data.ncols
+        self.npixels = npixels
+        self.centerpixel = npixels / 2
+        self.units = data.units
+        self.scale = data.scale
+        self.valid_rows = len(df)
         if self.valid_rows == 0:
             print 'Warning: server did not return valid data for this run!'
         return df
