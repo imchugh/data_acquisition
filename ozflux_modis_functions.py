@@ -50,7 +50,7 @@ def read_from_existing_file(target_file_path):
 # Main program
 #------------------------------------------------------------------------------
     
-master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
+master_file_path = '/mnt/OzFlux/site_master.xls'
 output_path = '/rdsi/market/MODIS'
 drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3',
                                'Land_Cover_Type_1_Secondary', 
@@ -77,7 +77,9 @@ for site in site_df.index:
             qc_band = mf.get_qc_variable_band(product)
         if qc_band: band_list.remove(qc_band)
         product_site_dir_path = os.path.join(site_dir_path, product)
-        product_dates_available = mf.get_date_list(lat, lon, product)
+        product_dates_available = map(lambda x: 
+                                      dt.datetime.strptime(x[1:], '%Y%j').date(),
+                                      mf.get_date_list(lat, lon, product))
         if not os.path.isdir(product_site_dir_path): 
             os.mkdir(product_site_dir_path)        
         for band in band_list:
@@ -87,11 +89,13 @@ for site in site_df.index:
                 df = read_from_existing_file(path_filename)
                 dates_to_retrieve = sorted(filter(lambda x: not x in df.index,
                                                   product_dates_available))
+                if not dates_to_retrieve: continue
                 x = mf.modis_data_by_npixel(lat, lon, product, band, 
                                             start_date = dates_to_retrieve[0],
                                             end_date = dates_to_retrieve[-1],
                                             site = site)
             else:
                 x = mf.modis_data_by_npixel(lat, lon, product, band, site = site)
+            if x.valid_rows == 0: continue
             x.write_to_file(product_site_dir_path)
 #------------------------------------------------------------------------------

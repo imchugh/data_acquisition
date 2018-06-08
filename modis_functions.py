@@ -134,7 +134,10 @@ class modis_data(object):
             self.centerpixel = npixels / 2
             self.units = data.units
             self.scale = data.scale
+            self.valid_rows = len(df)
             init = False
+        if self.valid_rows == 0:
+            print 'Warning: server did not return valid data for this run!'
         return df
     #--------------------------------------------------------------------------
     
@@ -142,6 +145,7 @@ class modis_data(object):
     def do_sample_stats(self, pixel_quality = None):
         
         if self.npixels == 1: print 'Cannot analyse single pixel'; return
+        if len(self.data) == 0: print 'Cannot do stats on empty dataframe!'; return
         if not self.qc_band:
             print ('No qc variable available for this modis product; '
            'returning unfiltered product')
@@ -160,7 +164,10 @@ class modis_data(object):
         if not self.start_date: 
             start_date = modis_date_list[0]
         else:
-            start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
+            try:
+                start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
+            except:
+                pdb.set_trace()
         if not self.end_date:
             end_date = modis_date_list[-1]
         else:
