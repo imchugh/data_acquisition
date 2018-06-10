@@ -84,19 +84,22 @@ for site in site_df.index:
         if not os.path.isdir(product_site_dir_path): 
             os.mkdir(product_site_dir_path)        
         for band in band_list:
-            file_name = '{0}_{1}_{2}.csv'.format(site_name, product, band)
-            path_filename = os.path.join(product_site_dir_path, file_name)
-            if os.path.isfile(path_filename):
-                df = read_from_existing_file(path_filename)
-                dates_to_retrieve = sorted(filter(lambda x: not x in df.index,
-                                                  product_dates_available))
-                if not dates_to_retrieve: continue
-                x = mf.modis_data_by_npixel(lat, lon, product, band, 
-                                            start_date = dates_to_retrieve[0],
-                                            end_date = dates_to_retrieve[-1],
-                                            site = site)
-            else:
-                x = mf.modis_data_by_npixel(lat, lon, product, band, site = site)
-            if x.valid_rows == 0: continue
-            x.write_to_file(product_site_dir_path)
+            try:
+                file_name = '{0}_{1}_{2}.csv'.format(site_name, product, band)
+                path_filename = os.path.join(product_site_dir_path, file_name)
+                if os.path.isfile(path_filename):
+                    df = read_from_existing_file(path_filename)
+                    dates_to_retrieve = sorted(filter(lambda x: not x in df.index,
+                                                      product_dates_available))
+                    if not dates_to_retrieve: continue
+                    x = mf.modis_data_by_npixel(lat, lon, product, band, 
+                                                start_date = dates_to_retrieve[0],
+                                                end_date = dates_to_retrieve[-1],
+                                                site = site)
+                else:
+                    x = mf.modis_data_by_npixel(lat, lon, product, band, site = site)
+                if x.valid_rows == 0: continue
+                x.write_to_file(product_site_dir_path)
+            except:
+                continue
 #------------------------------------------------------------------------------

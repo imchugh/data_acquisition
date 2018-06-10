@@ -145,7 +145,7 @@ class modis_data(object):
         if len(self.data) == 0: print 'Cannot do stats on empty dataframe!'; return
         if not self.qc_band:
             print ('No qc variable available for this modis product; '
-           'returning unfiltered product')
+                   'returning unfiltered product')
         df = pd.concat(map(lambda x: self.get_pixel_by_num(x, pixel_quality), 
                            range(self.npixels)), axis = 1)
         stats_df = df.transpose().describe().transpose()
