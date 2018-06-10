@@ -73,9 +73,10 @@ for site in site_df.index:
         if '11' in product:
             for band in ['day', 'night']:
                 qc_band = mf.get_qc_variable_band(product, band)
+                band_list.remove(qc_band)
         else:
             qc_band = mf.get_qc_variable_band(product)
-        if qc_band: band_list.remove(qc_band)
+            if qc_band: band_list.remove(qc_band)
         product_site_dir_path = os.path.join(site_dir_path, product)
         product_dates_available = map(lambda x: 
                                       dt.datetime.strptime(x[1:], '%Y%j').date(),
