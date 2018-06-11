@@ -69,14 +69,23 @@ class modis_data(object):
         self.product = product
         self.band = band
         self.qc_band = get_qc_variable_band(product, band)
-        if self.band == self.qc_band: self.band = None
+        self.qc_is_primary = self._check_if_qc_primary()
         self.start_date = start_date
         self.end_date = end_date
         self.subset_height_km = subset_height_km
         self.subset_width_km = subset_width_km
-        self.site = site
+        self.site = site if site else 'Unknown'
         self.data = self._compile_data()
     #-------------------------------------------------------------------------- 
+
+    #--------------------------------------------------------------------------
+    def _check_if_qc_primary(self):
+        
+        if self.band == self.qc_band or 'QC' in self.band: 
+            self.qc_band = None
+            return True
+        return False
+    #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------
     def _compile_data(self):
@@ -84,9 +93,8 @@ class modis_data(object):
         grouped_dates = self._find_dates()
         bands = filter(lambda x: not x is None, [self.band, self.qc_band])
         df_list = []
-        site = self.site if self.site else 'Unknown'
         print ('Retrieving data for {0} site (product: {1}, band: {2}):'
-               .format(site, self.product, self.band))
+               .format(self.site, self.product, self.band))
         for this_band in bands:
             data_list = []
             date_list = []
@@ -105,12 +113,13 @@ class modis_data(object):
                     vals = map(lambda x: int(x), line.split(',')[-npixels:])
                     date = str(line.split(',')[2])
                     date_list.append(date)
-                    if this_band == self.band: 
-                        if (data.scale and not 'QC' in this_band): 
-                            vals = map(lambda x: x * data.scale, vals)
-                        vals = map(lambda x: round(x, 4), vals)
-                    else:
-                        vals = _convert_binary(vals, self.product)
+                    if not self.qc_is_primary:
+                        if this_band == self.band:
+                            if data.scale: 
+                                vals = map(lambda x: round(x * data.scale, 4), 
+                                           vals)
+                        elif this_band == self.qc_band:
+                            vals = _convert_binary(vals, self.product)
                     data_list.append(vals)
                     print '{},'.format(date[1:]),
             df_index = map(lambda x: dt.datetime.strptime(x, 'A%Y%j').date(),
@@ -161,10 +170,7 @@ class modis_data(object):
         if not self.start_date: 
             start_date = modis_date_list[0]
         else:
-            try:
-                start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
-            except:
-                pdb.set_trace()
+            start_date = dt.datetime.strftime(self.start_date, 'A%Y%j')
         if not self.end_date:
             end_date = modis_date_list[-1]
         else:
@@ -194,11 +200,10 @@ class modis_data(object):
                                ' "Acceptable" or None')
         var_name = self._make_name(self.band, pixel_num)
         if not pixel_quality: return self.data[var_name].copy()
-        qc_band = get_qc_variable_band(self.product, self.band)
-        if not qc_band: 
+        if not self.qc_band: 
             return self.data[var_name].copy()
         else:
-            qc_name = self._make_name(qc_band, pixel_num)
+            qc_name = self._make_name(self.qc_band, pixel_num)
             if pixel_quality == 'High': threshold = 0
             if pixel_quality == 'Acceptable': 
                 threshold = get_qc_threshold(self.product)
@@ -253,27 +258,12 @@ class modis_data(object):
     
     #--------------------------------------------------------------------------
     def _reorder_columns(self, col_names):
-        if not (self.band and self.qc_band): return col_names
-        try:
-            col_tuples = zip(sorted(filter(lambda x: self.band in x, col_names)),
-                             sorted(filter(lambda x: self.qc_band in x, col_names)))
-        except TypeError:
-            pdb.set_trace()
+        if not self.qc_band: return col_names
+        col_tuples = zip(sorted(filter(lambda x: self.band in x, col_names)),
+                         sorted(filter(lambda x: self.qc_band in x, col_names)))
         new_order = [val for sublist in col_tuples for val in sublist]
         return new_order
     #--------------------------------------------------------------------------
-    
-    #--------------------------------------------------------------------------
-    def write_file_name(self):
-        
-        file_name_list = []
-        if self.site: 
-            site_str = '_'.join(self.site.split(' '))
-            file_name_list.append(site_str)
-        file_name_list.append(self.product)
-        file_name_list.append(self.band)
-        return '{}.csv'.format('_'.join(file_name_list))
-    #--------------------------------------------------------------------------    
     
     #--------------------------------------------------------------------------
     def write_to_file(self, path_to_dir, pre_header = None):
@@ -282,7 +272,8 @@ class modis_data(object):
             assert os.path.isdir(path_to_dir)
         except AssertionError:
             raise IOError('Specified path does not exist')
-        file_name_str = self.write_file_name()
+        file_name_str = '{0}_{1}_{2}.csv'.format(self.site, self.product, 
+                                                 self.band)
         target_file_path = os.path.join(path_to_dir, file_name_str)
         df = self.data.copy().join(self.do_sample_stats(pixel_quality = 
                                                         'Acceptable'))        
