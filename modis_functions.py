@@ -14,8 +14,6 @@ import pandas as pd
 from suds.client import Client
 import webbrowser
 
-import pdb
-
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
            'MODIS_soapservice.wsdl')
 
@@ -110,6 +108,9 @@ class modis_data(object):
                                        self.subset_width_km)
                 npixels = int(data.ncols * data.nrows)
                 for line in data.subset:
+                    if len(line) == 0: 
+                        print 'Missing data line... skipping,'
+                        continue
                     vals = map(lambda x: int(x), line.split(',')[-npixels:])
                     date = str(line.split(',')[2])
                     date_list.append(date)
