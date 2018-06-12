@@ -11,8 +11,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+import ssl
 from suds.client import Client
+from time import sleep
 import webbrowser
+
+import pdb
 
 wsdlurl = ('https://modis.ornl.gov/cgi-bin/MODIS/soapservice/'
            'MODIS_soapservice.wsdl')
@@ -86,8 +90,8 @@ class modis_data(object):
     #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------
-    def _compile_data(self):
-
+    def _compile_data(self):          
+                    
         grouped_dates = self._find_dates()
         bands = filter(lambda x: not x is None, [self.band, self.qc_band])
         df_list = []
@@ -101,11 +105,15 @@ class modis_data(object):
             elif this_band == self.qc_band:
                 print ('Fetching QC data from server for dates:')
             for date_pair in grouped_dates:
-                data = get_subset_data(self.latitude, self.longitude, 
-                                       self.product, this_band, 
-                                       date_pair[0], date_pair[1], 
-                                       self.subset_height_km, 
-                                       self.subset_width_km)
+                try:
+                    data = get_subset_data(self.latitude, self.longitude, 
+                                           self.product, this_band, 
+                                           date_pair[0], date_pair[1], 
+                                           self.subset_height_km, 
+                                           self.subset_width_km)
+                except RuntimeError, e:
+                    print e
+                    continue
                 npixels = int(data.ncols * data.nrows)
                 for line in data.subset:
                     if len(line) == 0: 
@@ -277,7 +285,7 @@ class modis_data(object):
         file_name_str = '{0}_{1}_{2}.csv'.format(site_name, self.product, self.band)
         target_file_path = os.path.join(path_to_dir, file_name_str)
         df = self.data.copy().join(self.do_sample_stats(pixel_quality = 
-                                                        'Acceptable'))        
+                                                        'Acceptable'))
         if not os.path.isfile(target_file_path):
             self._write_to_new_file(target_file_path, df, pre_header)
         else:
@@ -555,7 +563,19 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
 
     assert start_date <= end_date
     client = Client(wsdlurl)
-    return client.service.getsubset(lat, lon, product, band, 
-                                    start_date, end_date, 
-                                    subset_height_km, subset_width_km)
+    counter = 0
+    while True:
+        try:
+            data = client.service.getsubset(lat, lon, product, band, 
+                                            start_date, end_date, 
+                                            subset_height_km, subset_width_km)
+        except ssl.SSLError:
+            counter += 1
+            sleep(5)
+            if counter > 10: 
+                raise RuntimeError('Server failed to respond 10 times... '
+                                   'giving up')
+            continue
+        break
+    return data
 #------------------------------------------------------------------------------
