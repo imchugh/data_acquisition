@@ -273,8 +273,8 @@ class modis_data(object):
             assert os.path.isdir(path_to_dir)
         except AssertionError:
             raise IOError('Specified path does not exist')
-        file_name_str = '{0}_{1}_{2}.csv'.format(self.site, self.product, 
-                                                 self.band)
+        site_name = '_'.join(self.site.split(' '))
+        file_name_str = '{0}_{1}_{2}.csv'.format(site_name, self.product, self.band)
         target_file_path = os.path.join(path_to_dir, file_name_str)
         df = self.data.copy().join(self.do_sample_stats(pixel_quality = 
                                                         'Acceptable'))        
