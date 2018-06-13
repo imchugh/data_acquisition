@@ -81,7 +81,7 @@ product_list = mf.get_product_list()
 site_df = get_ozflux_site_list(master_file_path)
 
 # Iterate over sites and check dir exists (make if not)
-for site in ['Adelaide River']:#site_df.index:
+for site in site_df.index:
     site_name = '_'.join(site.split(' '))
     site_dir_path = os.path.join(output_path, site_name)
     check_dir(site_dir_path)
