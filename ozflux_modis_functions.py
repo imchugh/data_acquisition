@@ -89,7 +89,9 @@ for site in site_df.index:
     
     # Iterate over products and check dir exists (make if not) and get 
     # available dates
-    for product in product_list:
+    for product in ['MOD11A2', 'MYD11A2', 'MOD13Q1', 'MYD13Q1', 'MCD15A2H', 
+                    'MOD15A2H', 'MYD15A2H', 'MCD15A3H', 'MOD16A2', 
+                    'MOD17A2H', 'MYD17A2H', 'MOD17A3H', 'MYD17A3H']:#product_list:
         band_list = get_bands_to_process(product, drop_bands_dict)
         product_site_dir_path = os.path.join(site_dir_path, product)
         check_dir(product_site_dir_path)

@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-import ssl
 from suds.client import Client
 from time import sleep
 import webbrowser
@@ -90,6 +89,34 @@ class modis_data(object):
     #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------
+    def _check_line_integrity(self, subset, band):
+
+        data_list = []
+        date_list = []
+        npixels = int(subset.ncols * subset.nrows)
+        for line in subset.subset:
+            if len(line) == 0: 
+                print 'Missing data line... skipping,',
+                continue
+            date = str(line.split(',')[2])
+            date_list.append(date)
+            vals = map(lambda x: int(x), line.split(',')[-npixels:])
+            if not len(vals) == npixels: 
+                print 'Data missing or mangled for date',
+                continue
+            if not self.qc_is_primary:
+                if band == self.band:
+                    if subset.scale: 
+                        vals = map(lambda x: round(x * subset.scale, 4), 
+                                   vals)
+                elif band == self.qc_band:
+                    vals = _convert_binary(vals, self.product)
+            data_list.append(vals)
+            print '{},'.format(date[1:]),
+        return data_list, date_list
+    #--------------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------
     def _compile_data(self):          
                     
         grouped_dates = self._find_dates()
@@ -111,26 +138,12 @@ class modis_data(object):
                                            date_pair[0], date_pair[1], 
                                            self.subset_height_km, 
                                            self.subset_width_km)
+                    npixels = int(data.ncols * data.nrows)
                 except RuntimeError, e:
                     print e
                     continue
-                npixels = int(data.ncols * data.nrows)
-                for line in data.subset:
-                    if len(line) == 0: 
-                        print 'Missing data line... skipping,'
-                        continue
-                    vals = map(lambda x: int(x), line.split(',')[-npixels:])
-                    date = str(line.split(',')[2])
-                    date_list.append(date)
-                    if not self.qc_is_primary:
-                        if this_band == self.band:
-                            if data.scale: 
-                                vals = map(lambda x: round(x * data.scale, 4), 
-                                           vals)
-                        elif this_band == self.qc_band:
-                            vals = _convert_binary(vals, self.product)
-                    data_list.append(vals)
-                    print '{},'.format(date[1:]),
+                lines, dates = self._check_line_integrity(data, this_band)
+                data_list += lines; date_list += dates
             df_index = map(lambda x: dt.datetime.strptime(x, 'A%Y%j').date(),
                            date_list)
             df_cols = map(lambda x: self._make_name(this_band, x), 
@@ -574,17 +587,21 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
     assert start_date <= end_date
     client = Client(wsdlurl)
     counter = 0
+    exception_list = []
     while True:
         try:
             data = client.service.getsubset(lat, lon, product, band, 
                                             start_date, end_date, 
                                             subset_height_km, subset_width_km)
-        except:
+        except Exception, e:
             counter += 1
             sleep(2)
+            if not e in exception_list: exception_list.append(e)
             if counter > 10: 
-                raise RuntimeError('Server failed to respond 10 times... '
-                                   'giving up')
+                error_str = '{}\n'.format(', '.join(exception_list))
+                raise RuntimeError('Server failed to respond 10 times, with '
+                                   'following errors : {}. Giving up'
+                                   .format(error_str))
             continue
         break
     return data
