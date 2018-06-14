@@ -552,13 +552,6 @@ def get_qc_variable_band(product, band = None):
                      'MYD17A2H': 'Psn_QC_500m',
                      'MYD17A3H': 'Npp_QC_500m'}
     
-#    varnames_dict = {'09': 'sur_refl_qc_500m',
-#                     '11': ['QC_Day', 'QC_Night'],
-#                     '12': None,
-#                     '13': '250m_16_days_VI_Quality',
-#                     '15': 'FparLai_QC',
-#                     '16': 'ET_QC_500m',
-#                     '17': 'Psn_QC_500m'}
     qc_var = varnames_dict[product]
     if isinstance(qc_var, list):
         if not band:
@@ -586,9 +579,9 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
             data = client.service.getsubset(lat, lon, product, band, 
                                             start_date, end_date, 
                                             subset_height_km, subset_width_km)
-        except ssl.SSLError:
+        except:
             counter += 1
-            sleep(5)
+            sleep(2)
             if counter > 10: 
                 raise RuntimeError('Server failed to respond 10 times... '
                                    'giving up')
