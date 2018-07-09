@@ -439,7 +439,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
 # Set up logging    
 t = time.localtime()
 rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-log_filename = '../../Logfiles/AWS/aws2nc_'+rundatetime+'.log'
+log_filename = 'logfiles/AWS/aws2nc_'+rundatetime+'.log'
 logging.basicConfig(filename=log_filename,
                     format='%(asctime)s %(levelname)s %(message)s',
                     datefmt = '%H:%M:%S',
