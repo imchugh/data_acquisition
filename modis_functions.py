@@ -596,11 +596,15 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
         except Exception, e:
             counter += 1
             sleep(2)
-            if not e in exception_list: exception_list.append(e)
-            if counter > 10: 
+            if not e in exception_list: 
+                if isinstance(e, 'str'): 
+                    exception_list.append(e)
+                else:
+                    exception_list.append('URLError - no standard error string')
+            if counter > 10:
                 error_str = '{}\n'.format(', '.join(exception_list))
-                raise RuntimeError('Server failed to respond 10 times, with '
-                                   'following errors : {}. Giving up'
+                raise RuntimeError('Server failed to respond 10 times, '
+                                   'with following errors : {}. Giving up'
                                    .format(error_str))
             continue
         break
