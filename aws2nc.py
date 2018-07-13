@@ -236,7 +236,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             qcutils.CreateSeries(ds,'Hour',data_dict[bom_id][:,4],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Hour',units='none'))
             qcutils.CreateSeries(ds,'Minute',data_dict[bom_id][:,5],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Minute',units='none'))
             qcutils.CreateSeries(ds,'Second',Seconds,Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Second',units='none'))
-            # now get the Python datetime
+            # now get the Python datetime 
             qcutils.get_datetimefromymdhms(ds)
             # now put the data into the data structure
             attr=qcutils.MakeAttributeDictionary(long_name='Precipitation since 0900',units='mm',
@@ -428,7 +428,10 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             os.rename(ncname,newFileName)
             # now the old file will not be overwritten
         ncfile = qcio.nc_open_write(ncname)
-        qcio.nc_write_series(ncfile,ds_all,ndims=1)
+        try:
+            qcio.nc_write_series(ncfile,ds_all,ndims=1)
+        except:
+            pdb.set_trace()
         logging.info("Finished site: "+site_name)
 #------------------------------------------------------------------------------
 
@@ -439,7 +442,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
 # Set up logging    
 t = time.localtime()
 rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-log_filename = 'logfiles/AWS/aws2nc_'+rundatetime+'.log'
+log_filename = '/mnt/OzFlux/test_code/data_acquisition/logfiles/AWS/aws2nc_'+rundatetime+'.log'
 logging.basicConfig(filename=log_filename,
                     format='%(asctime)s %(levelname)s %(message)s',
                     datefmt = '%H:%M:%S',
@@ -455,17 +458,17 @@ in_path = "/rdsi/market/aws_ftp"
 out_path = "/mnt/OzFlux/Sites/"
 master_file_pathname = "/mnt/OzFlux/Sites/site_master.xls"
 
-try:
-    aws_to_nc(in_path, out_path, master_file_pathname)
-    logging.info('Downsampling to 1 hour time step for relevant sites...')
-    downsample_aws(out_path, master_file_pathname)
-    print "aws2nc: All done"
-    msg = ('Successfully processed BOM data and wrote to site netCDF AWS files'
-           '(see log for details)')
-    grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)
-except Exception, e:
-    msg = ('Data processing failed with the following message: {}; '
-           '(see log for details)'.format(e))
-    print msg
-    grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)    
+#try:
+aws_to_nc(in_path, out_path, master_file_pathname)
+logging.info('Downsampling to 1 hour time step for relevant sites...')
+downsample_aws(out_path, master_file_pathname)
+print "aws2nc: All done"
+msg = ('Successfully processed BOM data and wrote to site netCDF AWS files'
+       '(see log for details)')
+grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)
+#except Exception, e:
+#    msg = ('Data processing failed with the following message: {}; '
+#           '(see log for details)'.format(e))
+#    print msg
+#    grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)    
     
