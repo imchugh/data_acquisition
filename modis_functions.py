@@ -597,7 +597,7 @@ def get_subset_data(lat, lon, product, band, start_date, end_date,
             counter += 1
             sleep(2)
             if not e in exception_list: 
-                if isinstance(e, 'str'): 
+                if isinstance(e, str): 
                     exception_list.append(e)
                 else:
                     exception_list.append('URLError - no standard error string')
