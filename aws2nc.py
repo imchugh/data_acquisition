@@ -92,6 +92,7 @@ def downsample_aws(in_path, master_file_pathname):
             qcutils.get_ymdhmsfromdatetime(ds_aws_60minute)
             # loop over the series and take the average (every thing but Precip) or sum (Precip)
             for item in series_list:
+                print item
                 if "Precip" in item:
                     data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
                     data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
@@ -100,17 +101,21 @@ def downsample_aws(in_path, master_file_pathname):
                     flag_60minute = numpy.ma.max(flag_2d,axis=1)
                     qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
                 elif "Wd" in item:
-                    Ws_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
-                    Wd_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
-                    U_30minute,V_30minute = qcutils.convert_WsWdtoUV(Ws_30minute,Wd_30minute)
-                    U_2d = numpy.reshape(U_30minute,(nRecs_30minute/2,2))
-                    V_2d = numpy.reshape(V_30minute,(nRecs_30minute/2,2))
-                    flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
-                    U_60minute = numpy.ma.sum(U_2d,axis=1)
-                    V_60minute = numpy.ma.sum(V_2d,axis=1)
-                    Ws_60minute,Wd_60minute = qcutils.convert_UVtoWsWd(U_60minute,V_60minute)
-                    flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                    qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute,Flag=flag_60minute,Attr=attr)
+                    ws_name = item.replace('d', 's')
+                    if ws_name in series_list:
+                        series_list.remove(ws_name)
+                        Wd_30minute = qcutils.GetVariable(ds_aws_30minute, item, start_date, end_date)
+                        Ws_30minute = qcutils.GetVariable(ds_aws_30minute, ws_name, start_date, end_date)
+                        U_30minute,V_30minute = qcutils.convert_WSWDtoUV(Ws_30minute,Wd_30minute)
+                        U_2d = numpy.reshape(U_30minute['Data'],(nRecs_30minute/2,2))
+                        V_2d = numpy.reshape(V_30minute['Data'],(nRecs_30minute/2,2))
+                        flag_2d = numpy.reshape(Wd_30minute['Flag'] + Ws_30minute['Flag'],(nRecs_30minute/2,2))
+                        U_60minute = numpy.ma.sum(U_2d,axis=1)
+                        V_60minute = numpy.ma.sum(V_2d,axis=1)
+                        flag_60minute = numpy.ma.max(flag_2d,axis=1)
+                        Ws_60minute,Wd_60minute = qcutils.convert_UVtoWSWD({'Data': U_60minute} ,{'Data': V_60minute})
+                        qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute,Flag=flag_60minute,Attr=Wd_30minute['Attr'])
+                        qcutils.CreateSeries(ds_aws_60minute,ws_name,Ws_60minute,Flag=flag_60minute,Attr=Ws_30minute['Attr'])
                 else:
                     data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
                     data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
@@ -282,7 +287,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
                 qcts.InterpolateOverMissing(ds,series=label,maxlen=2)
             # put this stations data into the data structure dictionary
             ds_dict[bom_id] = ds
-    
+
         # get the earliest start datetime and the latest end datetime
         logging.info("Finding the start and end dates")
         bom_id_list = ds_dict.keys()
@@ -310,7 +315,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
         ds_all.globalattributes["longitude"] = site_longitude
         ds_all.globalattributes["elevation"] = site_elevation
         ts = int(ds_all.globalattributes["time_step"])
-        ldt_all = [result for result in qcutils.perdelta(start_date,end_date,datetime.timedelta(minutes=ts))]
+        ldt_all = numpy.array([result for result in qcutils.perdelta(start_date,end_date,datetime.timedelta(minutes=ts))])
         nRecs = len(ldt_all)
         ds_all.globalattributes["nc_nrecs"] = nRecs
         ds_all.series["DateTime"] = {}
