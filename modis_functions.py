@@ -98,12 +98,13 @@ class modis_data(object):
             if len(line) == 0: 
                 print 'Missing data line... skipping,',
                 continue
-            date = str(line.split(',')[2])
-            date_list.append(date)
-            vals = map(lambda x: int(x), line.split(',')[-npixels:])
-            if not len(vals) == npixels: 
-                print 'Data missing or mangled for date',
+            line_list = line.split(',')
+            if len(line_list) != npixels + 5:
+                print 'Some data missing or mangled for date'
                 continue
+            date = str(line_list[2])
+            date_list.append(date)
+            vals = map(lambda x: int(x), line_list[-npixels:])
             if not self.qc_is_primary:
                 if band == self.band:
                     if subset.scale: 
