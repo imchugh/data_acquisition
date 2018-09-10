@@ -336,7 +336,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             logging.info("Merging BoM site: "+str(bom_id))
             ds = ds_dict[bom_id]
             ldt = ds.series["DateTime"]["Data"]
-            index = qcutils.FindIndicesOfBInA(ldt,ldt_all)
+            index = qcutils.FindMatchingIndices(ldt,ldt_all)[1]
             # loop over the variables
             for label in ["Precip","Ta","Td","RH","Ws","Wd","Wg","ps"]:
                 data_all = numpy.ma.ones(nRecs,dtype=numpy.float64)*float(c.missing_value)
