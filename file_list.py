@@ -37,7 +37,12 @@ def list_opendap_dirs(url, ext = 'html'):
     soup = BeautifulSoup(page, 'html.parser')    
     l = [url + '/' + node.get('href') for node in soup.find_all('a') 
          if node.get('href').endswith(ext)]
-    return filter(lambda x: is_data_dir(x), l)
+    dir_list = filter(lambda x: is_data_dir(x), l)
+    clean_dir_list = []
+    for path in dir_list:
+        new_path = path.replace('//', '/')
+        clean_dir_list.append(str('/'.join(new_path.split('/')[:-1])))
+    return clean_dir_list
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -108,6 +113,7 @@ def get_date_site_lists(site_file_path, data_file_path, server_file_list):
         site_fmt_date_list = get_access_names_from_dates(str_dates)
         bool_df[name] = map(lambda x: x in site_fmt_date_list, server_file_list)
     d = {}
+    pdb.set_trace()
     bool_df = bool_df.T
     for col in bool_df.columns:
         l = list(bool_df[bool_df[col]==False].index)
@@ -126,9 +132,8 @@ site_file_path = '/home/ian/Temp/site_master.xls'
 
 # Make list of time_date file names available on the opendap server
 dir_list = list_opendap_dirs(url)
-date_list = map(lambda x: str(x.split('/')[-2]), dir_list)
+date_list = map(lambda x: str(x.split('/')[-1]), dir_list)
 server_file_list = get_access_names_from_dates(date_list)
 
 # Make list of time_date file names already written to existing file
 list_dict = get_date_site_lists(site_file_path, data_file_path, server_file_list)
-

@@ -41,7 +41,10 @@ def get_subset_from_nc(nc, indices_dict, var_name, dim_2 = None):
     combined_ma = ma.array(data, mask = combined_mask)
     unmasked_arr = combined_ma[~combined_ma.mask].data
     if not len(unmasked_arr) > len(sub_arr) / 2:
-        if not combined_ma[1, 1].mask: return combined_ma[1, 1].data
+        try: 
+            if not combined_ma[1, 1].mask: return combined_ma[1, 1].data
+        except AttributeError: 
+            return np.nan
         return np.nan
     return unmasked_arr.mean()
 #------------------------------------------------------------------------------    
@@ -264,7 +267,7 @@ output_dir = '/home/ian/Desktop/ACCESS'
 
 yest = dt.date.today() - dt.timedelta(1)
 ymd = yest.strftime('%Y%m%d')
-new_sites_df = get_ozflux_site_list('/home/ian/Temp/site_master.xls')
+sites_df = get_ozflux_site_list('/home/ian/Temp/site_master.xls')
 
 results_dict = {}
 for this_dir in [ymd + x for x in ['00', '06', '12', '18']]:
@@ -274,10 +277,10 @@ for this_dir in [ymd + x for x in ['00', '06', '12', '18']]:
         file_path = os.path.join(dir_path, fname)
         print file_path
         nc = netCDF4.Dataset(file_path)
-        for site in new_sites_df.index:
+        for site in sites_df.index:
             if not site in results_dict.keys(): results_dict[site] = []
-            coords_dict = {'lat': new_sites_df.loc[site, 'Latitude'],
-                           'lon': new_sites_df.loc[site, 'Longitude']}
+            coords_dict = {'lat': sites_df.loc[site, 'Latitude'],
+                           'lon': sites_df.loc[site, 'Longitude']}
             results_dict[site].append(get_site_data(nc, coords_dict))
             
 for site in sorted(results_dict.keys()):
