@@ -77,11 +77,13 @@ drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3'
                                'Land_Cover_Type_1_Secondary', 
                                'Land_Cover_Type_1_Secondary_Percent']}
 
-product_list = mf.get_product_list()
+product_list = ['MOD11A2', 'MYD11A2', 'MOD13Q1', 'MYD13Q1', 'MCD15A2H', 
+                'MOD15A2H', 'MYD15A2H', 'MCD15A3H', 'MOD16A2', 
+                'MOD17A2H', 'MYD17A2H', 'MOD17A3H', 'MYD17A3H']
 site_df = get_ozflux_site_list(master_file_path)
 
 # Iterate over sites and check dir exists (make if not)
-for site in site_df.index[5:]:
+for site in site_df.index:
     site_name = '_'.join(site.split(' '))
     site_dir_path = os.path.join(output_path, site_name)
     check_dir(site_dir_path)
@@ -89,9 +91,7 @@ for site in site_df.index[5:]:
     
     # Iterate over products and check dir exists (make if not) and get 
     # available dates
-    for product in ['MOD11A2', 'MYD11A2', 'MOD13Q1', 'MYD13Q1', 'MCD15A2H', 
-                    'MOD15A2H', 'MYD15A2H', 'MCD15A3H', 'MOD16A2', 
-                    'MOD17A2H', 'MYD17A2H', 'MOD17A3H', 'MYD17A3H']:#product_list:
+    for product in product_list:
         band_list = get_bands_to_process(product, drop_bands_dict)
         product_site_dir_path = os.path.join(site_dir_path, product)
         check_dir(product_site_dir_path)
