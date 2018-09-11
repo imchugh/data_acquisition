@@ -113,7 +113,6 @@ def get_date_site_lists(site_file_path, data_file_path, server_file_list):
         site_fmt_date_list = get_access_names_from_dates(str_dates)
         bool_df[name] = map(lambda x: x in site_fmt_date_list, server_file_list)
     d = {}
-    pdb.set_trace()
     bool_df = bool_df.T
     for col in bool_df.columns:
         l = list(bool_df[bool_df[col]==False].index)

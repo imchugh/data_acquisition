@@ -22,32 +22,33 @@ import xlrd
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_subset_from_nc(nc, indices_dict, var_name, dim_2 = None):
+def get_ozflux_site_list(master_file_path):
+    
+    wb = xlrd.open_workbook(master_file_path)
+    sheet = wb.sheet_by_name('Active')
+    header_row = 9
+    header_list = sheet.row_values(header_row)
+    df = pd.DataFrame()
+    for var in ['Site', 'Latitude', 'Longitude']:
+        index_val = header_list.index(var)
+        df[var] = sheet.col_values(index_val, header_row + 1)   
+    df.index = df[header_list[0]]
+    df.drop(header_list[0], axis = 1, inplace = True)
+    return df
+#------------------------------------------------------------------------------
 
-    lat_idx, lon_idx = indices_dict['lat'], indices_dict['lon']
-    if dim_2 is None:
-        sub_arr = (nc.variables[var_name][0][:]
-                   [lat_idx[0]: lat_idx[-1] + 1, lon_idx[0]: lon_idx[-1] + 1])
-    else:
-        sub_arr = (nc.variables[var_name][0][dim_2]
-                   [lat_idx[0]: lat_idx[-1] + 1, lon_idx[0]: lon_idx[-1] + 1])
-    this_range = range_dict[var_name]
-    data = sub_arr.data
-    first_mask = sub_arr.mask
-    less_mask = ma.masked_less(data, this_range[0]).mask
-    greater_mask = ma.masked_greater(data, this_range[1]).mask
-    fill_mask = ma.masked_equal(data, sub_arr.fill_value).mask
-    combined_mask = first_mask + less_mask + greater_mask + fill_mask
-    combined_ma = ma.array(data, mask = combined_mask)
-    unmasked_arr = combined_ma[~combined_ma.mask].data
-    if not len(unmasked_arr) > len(sub_arr) / 2:
-        try: 
-            if not combined_ma[1, 1].mask: return combined_ma[1, 1].data
-        except AttributeError: 
-            return np.nan
-        return np.nan
-    return unmasked_arr.mean()
-#------------------------------------------------------------------------------    
+#------------------------------------------------------------------------------
+def get_site_coordinate_indices(coords_dict, lats_list, lons_list):
+    
+    delta = 0.165
+    lat_indices = [i for i, x in enumerate(lats_list) 
+                   if (coords_dict['lat'] - delta) <= x <= 
+                      (coords_dict['lat'] + delta)]
+    lon_indices = [i for i, x in enumerate(lons_list) 
+                   if (coords_dict['lon'] - delta) <= x <= 
+                      (coords_dict['lon'] + delta)]
+    return {'lat': lat_indices, 'lon': lon_indices}
+#------------------------------------------------------------------------------
     
 #------------------------------------------------------------------------------
 def get_site_data(nc, coords_dict):
@@ -85,33 +86,32 @@ def get_site_data(nc, coords_dict):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_ozflux_site_list(master_file_path):
-    
-    wb = xlrd.open_workbook(master_file_path)
-    sheet = wb.sheet_by_name('Active')
-    header_row = 9
-    header_list = sheet.row_values(header_row)
-    df = pd.DataFrame()
-    for var in ['Site', 'Latitude', 'Longitude']:
-        index_val = header_list.index(var)
-        df[var] = sheet.col_values(index_val, header_row + 1)   
-    df.index = df[header_list[0]]
-    df.drop(header_list[0], axis = 1, inplace = True)
-    return df
-#------------------------------------------------------------------------------
+def get_subset_from_nc(nc, indices_dict, var_name, dim_2 = None):
 
-#------------------------------------------------------------------------------
-def get_site_coordinate_indices(coords_dict, lats_list, lons_list):
-    
-    delta = 0.165
-    lat_indices = [i for i, x in enumerate(lats_list) 
-                   if (coords_dict['lat'] - delta) <= x <= 
-                      (coords_dict['lat'] + delta)]
-    lon_indices = [i for i, x in enumerate(lons_list) 
-                   if (coords_dict['lon'] - delta) <= x <= 
-                      (coords_dict['lon'] + delta)]
-    return {'lat': lat_indices, 'lon': lon_indices}
-#------------------------------------------------------------------------------
+    lat_idx, lon_idx = indices_dict['lat'], indices_dict['lon']
+    if dim_2 is None:
+        sub_arr = (nc.variables[var_name][0][:]
+                   [lat_idx[0]: lat_idx[-1] + 1, lon_idx[0]: lon_idx[-1] + 1])
+    else:
+        sub_arr = (nc.variables[var_name][0][dim_2]
+                   [lat_idx[0]: lat_idx[-1] + 1, lon_idx[0]: lon_idx[-1] + 1])
+    this_range = range_dict[var_name]
+    data = sub_arr.data
+    first_mask = sub_arr.mask
+    less_mask = ma.masked_less(data, this_range[0]).mask
+    greater_mask = ma.masked_greater(data, this_range[1]).mask
+    fill_mask = ma.masked_equal(data, sub_arr.fill_value).mask
+    combined_mask = first_mask + less_mask + greater_mask + fill_mask
+    combined_ma = ma.array(data, mask = combined_mask)
+    unmasked_arr = combined_ma[~combined_ma.mask].data
+    if not len(unmasked_arr) > len(sub_arr) / 2:
+        try: 
+            if not combined_ma[1, 1].mask: return combined_ma[1, 1].data
+        except AttributeError: 
+            return np.nan
+        return np.nan
+    return unmasked_arr.mean()
+#------------------------------------------------------------------------------    
 
 #------------------------------------------------------------------------------
 def make_new_df(data_list):
@@ -260,7 +260,6 @@ range_dict = {'av_swsfcdown': [0, 1400],
               'lat_hflx': [-200, 1000],
               'abl_ht': [0, 5000]}
 
-#opendap_file_path = 'http://opendap.bom.gov.au:8080/thredds/dodsC/bmrc/access-r-fc/ops/surface/2018070506/ACCESS-R_2018070506_000_surface.nc'
 opendap_base_path = ('http://opendap.bom.gov.au:8080/thredds/dodsC/bmrc/'
                      'access-r-fc/ops/surface/')
 output_dir = '/home/ian/Desktop/ACCESS'
@@ -284,7 +283,8 @@ for this_dir in [ymd + x for x in ['00', '06', '12', '18']]:
             results_dict[site].append(get_site_data(nc, coords_dict))
             
 for site in sorted(results_dict.keys()):
-    df = make_new_df(results_dict[site])
-    name = '{}_ACCESS.csv'.format(site)
+    site_name = '_'.join(site.split(' '))
+    df = make_new_df(results_dict[site]).resample('30T').interpolate()
+    name = '{}_ACCESS.csv'.format(site_name)
     target = os.path.join(output_dir, name)
     df.to_csv(target, index_label = 'date_time')    
