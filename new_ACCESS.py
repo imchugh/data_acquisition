@@ -72,7 +72,7 @@ def convert_utc(dates, lat, lon, direction):
 
 #------------------------------------------------------------------------------
 def get_fileID_from_date(dates, ):
-    """Convert dates into the directory labelling format on opendap server"""
+    """Convert dates into the directory labelling format used on opendap server"""
 
     if not isinstance(dates, list): dates = [dates]    
     fmt_list = []
