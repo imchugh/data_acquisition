@@ -365,7 +365,7 @@ for this_dir in dir_list:
         print '- File {}...'.format(file_name),
         sites_list = seen_files_dict[ID]
         if not sites_list:
-            print 'previously seen and written! Skipping'
+            print 'previously seen and written - skipping!'
             continue
         nc = netCDF4.Dataset(file_path)
         print 'retrieving data for site:'
