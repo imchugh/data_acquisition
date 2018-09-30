@@ -17,6 +17,26 @@ ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 search_str = 'AWS' # 'globalsolar'
 
 #------------------------------------------------------------------------------
+def get_station_list(file_name = 'stations.txt'):
+    
+    ftp_server = 'ftp.bom.gov.au'
+    ftp_dir = 'anon2/home/ncc/metadata/sitelists/'
+    ftp = ftplib.FTP(ftp_server)
+    ftp.login('anonymous', 'guest')
+    full_file_name = os.path.join(ftp_dir, file_name)
+    pdb.set_trace()
+    if not full_file_name in ftp.nlst(ftp_dir): 
+        print 'File not found!'
+        return
+    f_str = 'RETR {0}'.format(os.path.join(ftp_dir, full_file_name))
+    sio = StringIO.StringIO()
+    ftp.retrbinary(f_str, sio.write)
+    ftp.close()
+    sio.seek(0)
+    return sio.readlines()
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def get_file_list():
 
     ftp = ftplib.FTP(ftp_server)
