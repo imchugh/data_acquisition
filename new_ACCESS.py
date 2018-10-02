@@ -177,8 +177,8 @@ def get_subset_from_nc(nc, indices_dict, var_name, dim_2 = None):
     fill_mask = ma.masked_equal(data, sub_arr.fill_value).mask
     combined_mask = first_mask + less_mask + greater_mask + fill_mask
     combined_ma = ma.array(data, mask = combined_mask)
-    unmasked_arr = combined_ma[~combined_ma.mask].data
-    if not len(unmasked_arr) > len(sub_arr) / 2:
+    unmasked_arr = combined_ma[~combined_ma.mask].data.flatten()
+    if not len(unmasked_arr) > len(sub_arr.flatten()) / 2:
         try: 
             if not combined_ma[1, 1].mask: return combined_ma[1, 1].data
         except AttributeError: 
@@ -348,7 +348,7 @@ range_dict = {'av_swsfcdown': [0, 1400],
 
 opendap_base_url = ('http://opendap.bom.gov.au:8080/thredds/dodsC/bmrc/'
                     'access-r-fc/ops/surface/')
-output_dir = '/home/ian/Desktop/ACCESS'
+output_dir = '/home/ian/Desktop'
 
 sites_df = get_ozflux_site_list('/home/ian/Temp/site_master.xls')
 dir_list = list_opendap_dirs(opendap_base_url)
