@@ -180,7 +180,7 @@ def get_subset_from_nc(nc, indices_dict, var_name, dim_2 = None):
     unmasked_arr = combined_ma[~combined_ma.mask].data.flatten()
     if not len(unmasked_arr) > len(sub_arr.flatten()) / 2:
         try: 
-            if not combined_ma[1, 1].mask: return combined_ma[1, 1].data
+            if not combined_ma.mask[1, 1]: return combined_ma.data[1, 1]
         except AttributeError: 
             return np.nan
         return np.nan
