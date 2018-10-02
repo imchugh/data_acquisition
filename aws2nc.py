@@ -71,70 +71,70 @@ def downsample_aws(in_path, master_file_pathname):
         dt_aws_60minute = list(dt_aws_2d[:,1])
         nRecs_60minute = len(dt_aws_60minute)   
         series_list = ds_aws_30minute.series.keys()
+        
         for item in ["DateTime","Ddd","Day","Minute","xlDateTime","Hour","time","Month","Second","Year"]:
-            print 'Yay!'
             if item in series_list: series_list.remove(item)
             
-            # get the 60 minute data structure
-            ds_aws_60minute = qcio.DataStructure()
-            # get the global attributes
-            for item in ds_aws_30minute.globalattributes.keys():
-                ds_aws_60minute.globalattributes[item] = ds_aws_30minute.globalattributes[item]
-            # overwrite with 60 minute values as appropriate
-            ds_aws_60minute.globalattributes["nc_nrecs"] = str(nRecs_60minute)
-            ds_aws_60minute.globalattributes["time_step"] = str(60)
-            # put the Python datetime into the data structure
-            ds_aws_60minute.series["DateTime"] = {}
-            ds_aws_60minute.series["DateTime"]["Data"] = dt_aws_60minute
-            ds_aws_60minute.series["DateTime"]["Flag"] = numpy.zeros(nRecs_60minute,dtype=numpy.int32)
-            ds_aws_60minute.series["DateTime"]["Attr"] = qcutils.MakeAttributeDictionary(long_name="DateTime in local time zone",units="None")
-            # add the Excel datetime, year, month etc
-            qcutils.get_xldatefromdatetime(ds_aws_60minute)
-            qcutils.get_ymdhmsfromdatetime(ds_aws_60minute)
-            # loop over the series and take the average (every thing but Precip) or sum (Precip)
-            for item in series_list:
-                print item
-                print 'Series list length: {}'.format(str(len(series_list)))
-                print 'Structure length: {}'.format(str(len(ds_aws_60minute.series.keys())))
-                if "Precip" in item:
-                    data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
-                    data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
-                    flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
-                    data_60minute = numpy.ma.sum(data_2d,axis=1)
+        # get the 60 minute data structure
+        ds_aws_60minute = qcio.DataStructure()
+        # get the global attributes
+        for item in ds_aws_30minute.globalattributes.keys():
+            ds_aws_60minute.globalattributes[item] = ds_aws_30minute.globalattributes[item]
+        # overwrite with 60 minute values as appropriate
+        ds_aws_60minute.globalattributes["nc_nrecs"] = str(nRecs_60minute)
+        ds_aws_60minute.globalattributes["time_step"] = str(60)
+        # put the Python datetime into the data structure
+        ds_aws_60minute.series["DateTime"] = {}
+        ds_aws_60minute.series["DateTime"]["Data"] = dt_aws_60minute
+        ds_aws_60minute.series["DateTime"]["Flag"] = numpy.zeros(nRecs_60minute,dtype=numpy.int32)
+        ds_aws_60minute.series["DateTime"]["Attr"] = qcutils.MakeAttributeDictionary(long_name="DateTime in local time zone",units="None")
+        # add the Excel datetime, year, month etc
+        qcutils.get_xldatefromdatetime(ds_aws_60minute)
+        qcutils.get_ymdhmsfromdatetime(ds_aws_60minute)
+        # loop over the series and take the average (every thing but Precip) or sum (Precip)
+        for item in series_list:
+            print item
+            print 'Series list length: {}'.format(str(len(series_list)))
+            print 'Structure length: {}'.format(str(len(ds_aws_60minute.series.keys())))
+            if "Precip" in item:
+                data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
+                flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
+                data_60minute = numpy.ma.sum(data_2d,axis=1)
+                flag_60minute = numpy.ma.max(flag_2d,axis=1)
+                qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
+            elif "Wd" in item:
+                ws_name = item.replace('d', 's')
+                if ws_name in series_list:
+                    series_list.remove(ws_name)
+                    Wd_30minute = qcutils.GetVariable(ds_aws_30minute, item, start_date, end_date)
+                    Ws_30minute = qcutils.GetVariable(ds_aws_30minute, ws_name, start_date, end_date)
+                    U_30minute,V_30minute = qcutils.convert_WSWDtoUV(Ws_30minute,Wd_30minute)
+                    U_2d = numpy.reshape(U_30minute['Data'],(nRecs_30minute/2,2))
+                    V_2d = numpy.reshape(V_30minute['Data'],(nRecs_30minute/2,2))
+                    flag_2d = numpy.reshape(Wd_30minute['Flag'] + Ws_30minute['Flag'],(nRecs_30minute/2,2))
+                    U_60minute = numpy.ma.sum(U_2d,axis=1)
+                    V_60minute = numpy.ma.sum(V_2d,axis=1)
                     flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                    qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
-                elif "Wd" in item:
-                    ws_name = item.replace('d', 's')
-                    if ws_name in series_list:
-                        series_list.remove(ws_name)
-                        Wd_30minute = qcutils.GetVariable(ds_aws_30minute, item, start_date, end_date)
-                        Ws_30minute = qcutils.GetVariable(ds_aws_30minute, ws_name, start_date, end_date)
-                        U_30minute,V_30minute = qcutils.convert_WSWDtoUV(Ws_30minute,Wd_30minute)
-                        U_2d = numpy.reshape(U_30minute['Data'],(nRecs_30minute/2,2))
-                        V_2d = numpy.reshape(V_30minute['Data'],(nRecs_30minute/2,2))
-                        flag_2d = numpy.reshape(Wd_30minute['Flag'] + Ws_30minute['Flag'],(nRecs_30minute/2,2))
-                        U_60minute = numpy.ma.sum(U_2d,axis=1)
-                        V_60minute = numpy.ma.sum(V_2d,axis=1)
-                        flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                        Ws_60minute,Wd_60minute = qcutils.convert_UVtoWSWD({'Data': U_60minute} ,{'Data': V_60minute})
-                        qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute['Data'],Flag=flag_60minute,Attr=Wd_30minute['Attr'])
-                        qcutils.CreateSeries(ds_aws_60minute,ws_name,Ws_60minute['Data'],Flag=flag_60minute,Attr=Ws_30minute['Attr'])
-                else:
-                    data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
-                    data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
-                    flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
-                    data_60minute = numpy.ma.average(data_2d,axis=1)
-                    flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                    qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
-            # write out the 60 minute data
-            aws_30min_name = aws_name.replace('.nc','_30minute.nc')
-            if os.path.isfile(aws_30min_name):
-                os.remove(aws_30min_name)
-            os.rename(aws_name, aws_30min_name) 
-            ncfile = qcio.nc_open_write(aws_name)
-            qcio.nc_write_series(ncfile, ds_aws_60minute, ndims=1)
-            print 'Conversion complete!'
-            return
+                    Ws_60minute,Wd_60minute = qcutils.convert_UVtoWSWD({'Data': U_60minute} ,{'Data': V_60minute})
+                    qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute['Data'],Flag=flag_60minute,Attr=Wd_30minute['Attr'])
+                    qcutils.CreateSeries(ds_aws_60minute,ws_name,Ws_60minute['Data'],Flag=flag_60minute,Attr=Ws_30minute['Attr'])
+            else:
+                data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
+                flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
+                data_60minute = numpy.ma.average(data_2d,axis=1)
+                flag_60minute = numpy.ma.max(flag_2d,axis=1)
+                qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
+            
+        # write out the 60 minute data
+        aws_30min_name = aws_name.replace('.nc','_30minute.nc')
+        if os.path.isfile(aws_30min_name):
+            os.remove(aws_30min_name)
+        os.rename(aws_name, aws_30min_name) 
+        ncfile = qcio.nc_open_write(aws_name)
+        qcio.nc_write_series(ncfile, ds_aws_60minute, ndims=1)
+        print 'Conversion complete!'
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
