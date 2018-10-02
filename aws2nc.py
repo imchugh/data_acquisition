@@ -36,7 +36,7 @@ def downsample_aws(in_path, master_file_pathname):
     sites_list = [''.join(site_list[i].split(' ')) for i, time_step 
                   in enumerate(time_step_list) if time_step == 60]
 
-    for site in ['Tumbarumba']:#sites_list:
+    for site in sites_list:
 
         logging.info('Running timestep conversion for {} site:'.format(site))
         path = os.path.join(in_path, site, "Data/AWS")
@@ -93,9 +93,6 @@ def downsample_aws(in_path, master_file_pathname):
         qcutils.get_ymdhmsfromdatetime(ds_aws_60minute)
         # loop over the series and take the average (every thing but Precip) or sum (Precip)
         for item in series_list:
-            print item
-            print 'Series list length: {}'.format(str(len(series_list)))
-            print 'Structure length: {}'.format(str(len(ds_aws_60minute.series.keys())))
             if "Precip" in item:
                 data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
                 data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
@@ -106,7 +103,6 @@ def downsample_aws(in_path, master_file_pathname):
             elif "Wd" in item:
                 ws_name = item.replace('d', 's')
                 if ws_name in series_list:
-                    series_list.remove(ws_name)
                     Wd_30minute = qcutils.GetVariable(ds_aws_30minute, item, start_date, end_date)
                     Ws_30minute = qcutils.GetVariable(ds_aws_30minute, ws_name, start_date, end_date)
                     U_30minute,V_30minute = qcutils.convert_WSWDtoUV(Ws_30minute,Wd_30minute)
@@ -119,14 +115,16 @@ def downsample_aws(in_path, master_file_pathname):
                     Ws_60minute,Wd_60minute = qcutils.convert_UVtoWSWD({'Data': U_60minute} ,{'Data': V_60minute})
                     qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute['Data'],Flag=flag_60minute,Attr=Wd_30minute['Attr'])
                     qcutils.CreateSeries(ds_aws_60minute,ws_name,Ws_60minute['Data'],Flag=flag_60minute,Attr=Ws_30minute['Attr'])
+            elif "Ws" in item:
+                continue
             else:
                 data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
                 data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
                 flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
                 data_60minute = numpy.ma.average(data_2d,axis=1)
                 flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
-            
+                qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)  
+
         # write out the 60 minute data
         aws_30min_name = aws_name.replace('.nc','_30minute.nc')
         if os.path.isfile(aws_30min_name):
@@ -183,7 +181,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
     in_filename = os.path.join(in_path, 'HM01X_Data*.csv')
     file_list = sorted(glob.glob(in_filename))
     site_list = bom_sites_info.keys()
-    for site_name in ['Tumbarumba']:#sorted(site_list):
+    for site_name in sorted(site_list):
         logging.info("Starting site: "+site_name)
         sname = site_name.replace(" ","")
         site_out_path = os.path.join(out_path, sname, "Data/AWS")
@@ -464,7 +462,7 @@ out_path = "/mnt/OzFlux/Sites/"
 master_file_pathname = "/mnt/OzFlux/Sites/site_master.xls"
 
 try:
-#    aws_to_nc(in_path, out_path, master_file_pathname)
+    aws_to_nc(in_path, out_path, master_file_pathname)
     logging.info('Downsampling to 1 hour time step for relevant sites...')
     downsample_aws(out_path, master_file_pathname)
     print "aws2nc: All done"
@@ -472,7 +470,6 @@ try:
            '(see log for details)')
     grunt_email.email_send(mail_recipients, 'Site AWS netCDF write status', msg)
 except Exception, e:
-    pdb.set_trace()
     msg = ('Data processing failed with the following message: {}; '
            '(see log for details)'.format(e))
     print msg
