@@ -6,7 +6,10 @@ Created on Mon May 14 10:15:05 2018
 @author: ian
 """
 
+import datetime as dt
 import ftplib
+import gzip
+import numpy as np
 import os
 import pandas as pd
 import pdb
@@ -17,7 +20,34 @@ ftp_server = 'ftp.ncdc.noaa.gov'
 ftp_dir = 'pub/data/noaa/'
 output_dir = '/home/ian/Temp/'
 
+#------------------------------------------------------------------------------
+def format_dict():
+    
+    names_list = ['variable_characters', 'usaf_id', 'wban_id', 'date', 'time',
+                  'source_flag', 'latitude', 'longitude', 'report_type',
+                  'elevation', 'call_letter', 'qc_process', 'wind_direction',
+                  'wind_direction_qc', 'wind_observation_type', 'wind_speed',
+                  'wind_speed_qc', 'air_temperature', 'air_temperature_qc',
+                  'dew_point_temperature', 'dew_point_temperature_qc',
+                  'air_pressure', 'air_pressure_qc']
 
+    tuple_list = [(0, 3), (4, 9), (10, 14), (15, 22), (23, 26), (27, 27),
+                  (28, 33), (34, 40), (41, 45), (46, 50), (51, 55), (56, 59),
+                  (60, 62), (63, 63), (64, 64), (65, 68), (69, 69), (87, 91),
+                  (92, 92), (93, 97), (98, 98), (99, 103), (104, 104)]
+    
+    return names_list, tuple_list
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def power_scaling_dict():
+    
+    return {'latitude': 3, 'longitude': 3, 'wind_speed': 1, 
+            'air_temperature': 1, 'dew_point_temperature': 1, 
+            'air_pressure': 1}
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def get_data_for_site_year(usaf_num, year):
     
     def is_number(this_str):
@@ -27,13 +57,11 @@ def get_data_for_site_year(usaf_num, year):
         except ValueError:
             return False
 
-    if not isinstance(usaf_num, (str, int, float)):
-        raise TypeError('Parameter usaf_num must be str, int or float')
-    usaf_num = str(int(usaf_num))
+    if not isinstance(usaf_num, str):
+        raise TypeError('Parameter usaf_num must be str')
     
-    if not isinstance(year, (str, int, float)):
-        raise TypeError('Parameter year must be str, int or float')
-    year = str(int(year))
+    if not isinstance(year, str):
+        raise TypeError('Parameter year must be str')
     
     ftp = ftplib.FTP(ftp_server)
     ftp.login()
@@ -43,16 +71,60 @@ def get_data_for_site_year(usaf_num, year):
         print 'Requested year not available'
         return
     ftp.cwd(os.path.join(ftp_dir, year))
-    usaf_list = map(lambda x: x.split('-')[0], ftp.nlst())
-    if not usaf_num in usaf_list:
+    usaf_list = ftp.nlst()
+    ID_list = map(lambda x: x.split('-')[0], usaf_list)
+    if not usaf_num in ID_list:
         print ('Data not available for year {0} and USAF number {1}'
                .format(year, usaf_num))
-    
-#    remote_file = os.path.join(ftp_dir, year, )
-#    pdb.set_trace()
-    
-    return ftp.nlst()
+        return
+    idx = ID_list.index(usaf_num)
+    remote_file = os.path.join('/', ftp_dir, year, usaf_list[idx])
+    with open('/home/ian/Desktop/test.gz', 'wb') as file_handle:
+        ftp.retrbinary('RETR {}'.format(remote_file), file_handle.write)
+    ftp.close()
+    return
+#------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------
+def uncompress_gzip(fname):
+    
+    vars_list, tuple_list = format_dict()
+    ref_dict = dict(zip(vars_list, tuple_list))
+    test = gzip.open(fname, 'rb')
+    master_list = []
+    for line in test:
+        sub_list = []
+        for var in vars_list:
+            char_nums = ref_dict[var]
+            sub_list.append(line[char_nums[0]: char_nums[1] + 1])
+        master_list.append(sub_list)
+    data_array = np.array(master_list)
+    df = pd.DataFrame()
+    for i, var in enumerate(vars_list):
+        try:
+            func = converters(var)
+            df[var] = map(lambda x: func(x), data_array[:, i])
+        except KeyError:
+            df[var] = data_array[:, i]
+    df.index = map(lambda x: dt.datetime.combine(x[0], x[1]),
+                   zip(df.date, df.time))   
+    return df.resample('60T').interpolate()
+#------------------------------------------------------------------------------
+
+def converters(var):
+    
+    d = {'date': (lambda x: dt.datetime.strptime(x, '%Y%m%d').date()),
+         'time': (lambda x: dt.datetime.strptime(x, '%H%M').time()),
+         'latitude': (lambda x: int(x) / 10.0**3), 
+         'longitude': (lambda x: int(x) / 10.0**3),
+         'wind_speed': (lambda x: int(x) / 10.0), 
+         'wind_direction': (lambda x: int(x) / 10.0),
+         'air_temperature': (lambda x: int(x) / 10.0), 
+         'air_pressure': (lambda x: int(x) / 10.0)}
+    
+    return d[var]
+    
+#------------------------------------------------------------------------------
 def get_oz_site_list():
     
     # Set the filename
