@@ -62,14 +62,7 @@ def check_seen_records(sites_df, data_file_path, server_ID_list):
 #------------------------------------------------------------------------------
 def convert_utc(dates, lat, lon, direction):
     """Convert to or from utc"""
-#    
-#    if not direction in ['from_utc', 'to_utc']:
-#        raise KeyError('direction parameter must be either to_utc or from_utc')
-#    tz = timezone(tzf().timezone_at(lat = lat, lng = lon))
-#    if direction == 'to_utc':
-#        return map(lambda x: x - (tz.utcoffset(x) - tz.dst(x)), dates)
-#    else:
-#        return map(lambda x: x + (tz.utcoffset(x) - tz.dst(x)), dates)
+
     ops = {'+': operator.add, '-': operator.sub}
 
     if not direction in ['from_utc', 'to_utc']:
