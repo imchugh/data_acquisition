@@ -98,7 +98,8 @@ def get_fileID_from_date(dates, ):
 
 #------------------------------------------------------------------------------
 def get_filepath_from_ID(ID):
-
+    '''Create the full path to target file from ID'''
+    
     date = ID.split('_')[0]
     fname = 'ACCESS-R_{}_surface.nc'.format(ID)
     return os.path.join(opendap_base_url, date, fname)
