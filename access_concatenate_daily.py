@@ -30,8 +30,8 @@ sys.path.append('/mnt/PyFluxPro/scripts')
 # PFP
 import constants as c
 import meteorologicalfunctions as mf
-import qcio
-import qcutils
+import pfp_io
+import pfp_utils
 
 # !!! classes !!!
 class ACCESSData(object):
@@ -164,12 +164,12 @@ def get_accessdata(ds_60minutes,f,info):
     flag_60minutes = numpy.zeros(nRecs,dtype=numpy.int32)
     # get the UTC hour
     hr_utc = [x.hour for x in dt_utc]
-    attr = qcutils.MakeAttributeDictionary(long_name='UTC hour')
-    qcutils.CreateSeries(ds_60minutes,'Hr_UTC',hr_utc,Flag=flag_60minutes,Attr=attr)
+    attr = pfp_utils.MakeAttributeDictionary(long_name='UTC hour')
+    pfp_utils.CreateSeries(ds_60minutes,'Hr_UTC',hr_utc,Flag=flag_60minutes,Attr=attr)
     # now loop over the variables listed in the control file
     for label in var_list:
         # get the name of the variable in the ACCESS file
-        access_name = var_dict[label]#qcutils.get_keyvaluefromcf(cf,["Variables",label],"access_name",default=label)
+        access_name = var_dict[label]#pfp_utils.get_keyvaluefromcf(cf,["Variables",label],"access_name",default=label)
         # warn the user if the variable not found
         if access_name not in f.variables.keys():
             msg = "Requested variable "+access_name
@@ -191,7 +191,7 @@ def get_accessdata(ds_60minutes,f,info):
                     msg = msg+") dimension in ACCESS file"
                     logging.error(msg)
                 series = series[idxne0]
-                qcutils.CreateSeries(ds_60minutes,label_ij,series,
+                pfp_utils.CreateSeries(ds_60minutes,label_ij,series,
                                      Flag=flag_60minutes,Attr=attr)
     return
 
@@ -206,39 +206,39 @@ def get_variableattributes(f,access_name):
     return attr
 
 def changeunits_airtemperature(ds_60minutes):
-    attr = qcutils.GetAttributeDictionary(ds_60minutes,"Ta_00")
+    attr = pfp_utils.GetAttributeDictionary(ds_60minutes,"Ta_00")
     if attr["units"] == "K":
         for i in range(0,3):
             for j in range(0,3):
                 label = "Ta_"+str(i)+str(j)
-                Ta,f,a = qcutils.GetSeriesasMA(ds_60minutes,label)
+                Ta,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label)
                 Ta = Ta - c.C2K
                 attr["units"] = "C"
-                qcutils.CreateSeries(ds_60minutes,label,Ta,Flag=f,Attr=attr)
+                pfp_utils.CreateSeries(ds_60minutes,label,Ta,Flag=f,Attr=attr)
     return
 
 def changeunits_soiltemperature(ds_60minutes):
-    attr = qcutils.GetAttributeDictionary(ds_60minutes,"Ts_00")
+    attr = pfp_utils.GetAttributeDictionary(ds_60minutes,"Ts_00")
     if attr["units"] == "K":
         for i in range(0,3):
             for j in range(0,3):
                 label = "Ts_"+str(i)+str(j)
-                Ts,f,a = qcutils.GetSeriesasMA(ds_60minutes,label)
+                Ts,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label)
                 Ts = Ts - c.C2K
                 attr["units"] = "C"
-                qcutils.CreateSeries(ds_60minutes,label,Ts,Flag=f,Attr=attr)
+                pfp_utils.CreateSeries(ds_60minutes,label,Ts,Flag=f,Attr=attr)
     return
 
 def changeunits_pressure(ds_60minutes):
-    attr = qcutils.GetAttributeDictionary(ds_60minutes,"ps_00")
+    attr = pfp_utils.GetAttributeDictionary(ds_60minutes,"ps_00")
     if attr["units"] == "Pa":
         for i in range(0,3):
             for j in range(0,3):
                 label = "ps_"+str(i)+str(j)
-                ps,f,a = qcutils.GetSeriesasMA(ds_60minutes,label)
+                ps,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label)
                 ps = ps/float(1000)
                 attr["units"] = "kPa"
-                qcutils.CreateSeries(ds_60minutes,label,ps,Flag=f,Attr=attr)
+                pfp_utils.CreateSeries(ds_60minutes,label,ps,Flag=f,Attr=attr)
     return
 
 def get_windspeedanddirection(ds_60minutes):
@@ -247,26 +247,26 @@ def get_windspeedanddirection(ds_60minutes):
             u_label = "u_"+str(i)+str(j)
             v_label = "v_"+str(i)+str(j)
             Ws_label = "Ws_"+str(i)+str(j)
-            u,f,a = qcutils.GetSeriesasMA(ds_60minutes,u_label)
-            v,f,a = qcutils.GetSeriesasMA(ds_60minutes,v_label)
+            u,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,u_label)
+            v,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,v_label)
             Ws = numpy.sqrt(u*u+v*v)
-            attr = qcutils.MakeAttributeDictionary(long_name="Wind speed",
+            attr = pfp_utils.MakeAttributeDictionary(long_name="Wind speed",
                                                    units="m/s",height="10m")
-            qcutils.CreateSeries(ds_60minutes,Ws_label,Ws,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,Ws_label,Ws,Flag=f,Attr=attr)
     # wind direction from components
     for i in range(0,3):
         for j in range(0,3):
             u_label = "u_"+str(i)+str(j)
             v_label = "v_"+str(i)+str(j)
             Wd_label = "Wd_"+str(i)+str(j)
-            u,f,a = qcutils.GetSeriesasMA(ds_60minutes,u_label)
-            v,f,a = qcutils.GetSeriesasMA(ds_60minutes,v_label)
+            u,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,u_label)
+            v,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,v_label)
             Wd = float(270) - numpy.ma.arctan2(v,u)*float(180)/numpy.pi
             index = numpy.ma.where(Wd>360)[0]
             if len(index)>0: Wd[index] = Wd[index] - float(360)
-            attr = qcutils.MakeAttributeDictionary(long_name="Wind direction",
+            attr = pfp_utils.MakeAttributeDictionary(long_name="Wind direction",
                                                    units="degrees",height="10m")
-            qcutils.CreateSeries(ds_60minutes,Wd_label,Wd,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,Wd_label,Wd,Flag=f,Attr=attr)
     return
 
 def get_relativehumidity(ds_60minutes):
@@ -276,13 +276,13 @@ def get_relativehumidity(ds_60minutes):
             Ta_label = "Ta_"+str(i)+str(j)
             ps_label = "ps_"+str(i)+str(j)
             RH_label = "RH_"+str(i)+str(j)
-            q,f,a = qcutils.GetSeriesasMA(ds_60minutes,q_label)
-            Ta,f,a = qcutils.GetSeriesasMA(ds_60minutes,Ta_label)
-            ps,f,a = qcutils.GetSeriesasMA(ds_60minutes,ps_label)
+            q,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,q_label)
+            Ta,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,Ta_label)
+            ps,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,ps_label)
             RH = mf.RHfromspecifichumidity(q, Ta, ps)
-            attr = qcutils.MakeAttributeDictionary(long_name='Relative humidity',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Relative humidity',
                                                    units='%',standard_name='not defined')
-            qcutils.CreateSeries(ds_60minutes,RH_label,RH,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,RH_label,RH,Flag=f,Attr=attr)
     return
 
 def get_absolutehumidity(ds_60minutes):
@@ -291,23 +291,23 @@ def get_absolutehumidity(ds_60minutes):
             Ta_label = "Ta_"+str(i)+str(j)
             RH_label = "RH_"+str(i)+str(j)
             Ah_label = "Ah_"+str(i)+str(j)
-            Ta,f,a = qcutils.GetSeriesasMA(ds_60minutes,Ta_label)
-            RH,f,a = qcutils.GetSeriesasMA(ds_60minutes,RH_label)
+            Ta,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,Ta_label)
+            RH,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,RH_label)
             Ah = mf.absolutehumidityfromRH(Ta, RH)
-            attr = qcutils.MakeAttributeDictionary(long_name='Absolute humidity',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Absolute humidity',
                                                    units='g/m3',standard_name='not defined')
-            qcutils.CreateSeries(ds_60minutes,Ah_label,Ah,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,Ah_label,Ah,Flag=f,Attr=attr)
     return
 
 def changeunits_soilmoisture(ds_60minutes):
-    attr = qcutils.GetAttributeDictionary(ds_60minutes,"Sws_00")
+    attr = pfp_utils.GetAttributeDictionary(ds_60minutes,"Sws_00")
     for i in range(0,3):
         for j in range(0,3):
             label = "Sws_"+str(i)+str(j)
-            Sws,f,a = qcutils.GetSeriesasMA(ds_60minutes,label)
+            Sws,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label)
             Sws = Sws/float(100)
             attr["units"] = "frac"
-            qcutils.CreateSeries(ds_60minutes,label,Sws,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,label,Sws,Flag=f,Attr=attr)
     return
 
 def get_radiation(ds_60minutes):
@@ -320,25 +320,25 @@ def get_radiation(ds_60minutes):
             label_Flu = "Flu_"+str(i)+str(j)
             label_Fn_sw = "Fn_sw_"+str(i)+str(j)
             label_Fn_lw = "Fn_lw_"+str(i)+str(j)
-            Fsd,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fsd)
-            Fld,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fld)
-            Fn_sw,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fn_sw)
-            Fn_lw,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fn_lw)
+            Fsd,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fsd)
+            Fld,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fld)
+            Fn_sw,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fn_sw)
+            Fn_lw,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fn_lw)
             Fsu = Fsd - Fn_sw
             Flu = Fld - Fn_lw
             Fn = (Fsd-Fsu)+(Fld-Flu)
-            attr = qcutils.MakeAttributeDictionary(long_name='Up-welling long wave',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Up-welling long wave',
                                                    standard_name='surface_upwelling_longwave_flux_in_air',
                                                    units='W/m2')
-            qcutils.CreateSeries(ds_60minutes,label_Flu,Flu,Flag=f,Attr=attr)
-            attr = qcutils.MakeAttributeDictionary(long_name='Up-welling short wave',
+            pfp_utils.CreateSeries(ds_60minutes,label_Flu,Flu,Flag=f,Attr=attr)
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Up-welling short wave',
                                                    standard_name='surface_upwelling_shortwave_flux_in_air',
                                                    units='W/m2')
-            qcutils.CreateSeries(ds_60minutes,label_Fsu,Fsu,Flag=f,Attr=attr)
-            attr = qcutils.MakeAttributeDictionary(long_name='Calculated net radiation',
+            pfp_utils.CreateSeries(ds_60minutes,label_Fsu,Fsu,Flag=f,Attr=attr)
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Calculated net radiation',
                                                    standard_name='surface_net_allwave_radiation',
                                                    units='W/m2')
-            qcutils.CreateSeries(ds_60minutes,label_Fn,Fn,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,label_Fn,Fn,Flag=f,Attr=attr)
     return
 
 def get_groundheatflux(ds_60minutes):
@@ -348,14 +348,14 @@ def get_groundheatflux(ds_60minutes):
             label_Fn = "Fn_"+str(i)+str(j)
             label_Fh = "Fh_"+str(i)+str(j)
             label_Fe = "Fe_"+str(i)+str(j)
-            Fn,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fn)
-            Fh,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fh)
-            Fe,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fe)
+            Fn,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fn)
+            Fh,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fh)
+            Fe,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fe)
             Fg = Fn - Fh - Fe
-            attr = qcutils.MakeAttributeDictionary(long_name='Calculated ground heat flux',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Calculated ground heat flux',
                                                    standard_name='downward_heat_flux_in_soil',
                                                    units='W/m2')
-            qcutils.CreateSeries(ds_60minutes,label_Fg,Fg,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,label_Fg,Fg,Flag=f,Attr=attr)
     return
 
 def get_availableenergy(ds_60miutes):
@@ -364,12 +364,12 @@ def get_availableenergy(ds_60miutes):
             label_Fg = "Fg_"+str(i)+str(j)
             label_Fn = "Fn_"+str(i)+str(j)
             label_Fa = "Fa_"+str(i)+str(j)
-            Fn,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fn)
-            Fg,f,a = qcutils.GetSeriesasMA(ds_60minutes,label_Fg)
+            Fn,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fn)
+            Fg,f,a = pfp_utils.GetSeriesasMA(ds_60minutes,label_Fg)
             Fa = Fn - Fg
-            attr = qcutils.MakeAttributeDictionary(long_name='Calculated available energy',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Calculated available energy',
                                                    standard_name='not defined',units='W/m2')
-            qcutils.CreateSeries(ds_60minutes,label_Fa,Fa,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,label_Fa,Fa,Flag=f,Attr=attr)
     return
 
 def perdelta(start,end,delta):
@@ -379,7 +379,7 @@ def perdelta(start,end,delta):
         curr += delta
 
 def interpolate_to_30minutes(ds_60minutes):
-    ds_30minutes = qcio.DataStructure()
+    ds_30minutes = pfp_io.DataStructure()
     # copy the global attributes
     for this_attr in ds_60minutes.globalattributes.keys():
         ds_30minutes.globalattributes[this_attr] = ds_60minutes.globalattributes[this_attr]
@@ -402,8 +402,8 @@ def interpolate_to_30minutes(ds_60minutes):
     flag = numpy.zeros(len(dt_utc_30minutes),dtype=numpy.int32)
     ds_30minutes.series["DateTime_UTC"]["Flag"] = flag
     # get the year, month etc from the datetime
-    qcutils.get_xldatefromdatetime(ds_30minutes)
-    qcutils.get_ymdhmsfromdatetime(ds_30minutes)
+    pfp_utils.get_xldatefromdatetime(ds_30minutes)
+    pfp_utils.get_ymdhmsfromdatetime(ds_30minutes)
     # interpolate to 30 minutes
     nRecs_60 = len(ds_60minutes.series["DateTime"]["Data"])
     nRecs_30 = len(ds_30minutes.series["DateTime"]["Data"])
@@ -415,7 +415,7 @@ def interpolate_to_30minutes(ds_60minutes):
         if item in varlist_60: varlist_60.remove(item)
     # now do the interpolation (its OK to interpolate accumulated precipitation)
     for label in varlist_60:
-        series_60minutes,flag,attr = qcutils.GetSeries(ds_60minutes,label)
+        series_60minutes,flag,attr = pfp_utils.GetSeries(ds_60minutes,label)
         ci_60minutes = numpy.zeros(len(series_60minutes))
         idx = numpy.where(abs(series_60minutes-float(c.missing_value))<c.eps)[0]
         ci_60minutes[idx] = float(1)
@@ -427,21 +427,21 @@ def interpolate_to_30minutes(ds_60minutes):
         series_30minutes[idx] = numpy.float64(c.missing_value)
         flag_30minutes = numpy.zeros(nRecs_30, dtype=numpy.int32)
         flag_30minutes[idx] = numpy.int32(1)
-        qcutils.CreateSeries(ds_30minutes,label,series_30minutes,Flag=flag_30minutes,Attr=attr)
+        pfp_utils.CreateSeries(ds_30minutes,label,series_30minutes,Flag=flag_30minutes,Attr=attr)
     # get the UTC hour
     hr_utc = [float(x.hour)+float(x.minute)/60 for x in dt_utc_30minutes]
-    attr = qcutils.MakeAttributeDictionary(long_name='UTC hour')
+    attr = pfp_utils.MakeAttributeDictionary(long_name='UTC hour')
     flag_30minutes = numpy.zeros(nRecs_30, dtype=numpy.int32)
-    qcutils.CreateSeries(ds_30minutes,'Hr_UTC',hr_utc,Flag=flag_30minutes,Attr=attr)
+    pfp_utils.CreateSeries(ds_30minutes,'Hr_UTC',hr_utc,Flag=flag_30minutes,Attr=attr)
     return ds_30minutes
 
 def get_instantaneous_precip30(ds_30minutes):
-    hr_utc,f,a = qcutils.GetSeries(ds_30minutes,'Hr_UTC')
+    hr_utc,f,a = pfp_utils.GetSeries(ds_30minutes,'Hr_UTC')
     for i in range(0,3):
         for j in range(0,3):
             label = "Precip_"+str(i)+str(j)
             # get the accumulated precipitation
-            accum,flag,attr = qcutils.GetSeries(ds_30minutes,label)
+            accum,flag,attr = pfp_utils.GetSeries(ds_30minutes,label)
             # get the 30 minute precipitation
             precip = numpy.ediff1d(accum,to_begin=0)
             # now we deal with the reset of accumulated precipitation at 00, 06, 12 and 18 UTC
@@ -466,16 +466,16 @@ def get_instantaneous_precip30(ds_30minutes):
             # set some variable attributes
             attr["long_name"] = "Precipitation total over time step"
             attr["units"] = "mm/30 minutes"
-            qcutils.CreateSeries(ds_30minutes,label,precip,Flag=flag,Attr=attr)
+            pfp_utils.CreateSeries(ds_30minutes,label,precip,Flag=flag,Attr=attr)
     return
 
 def get_instantaneous_precip60(ds_60minutes):
-    hr_utc,f,a = qcutils.GetSeries(ds_60minutes,'Hr_UTC')
+    hr_utc,f,a = pfp_utils.GetSeries(ds_60minutes,'Hr_UTC')
     for i in range(0,3):
         for j in range(0,3):
             label = "Precip_"+str(i)+str(j)
             # get the accumulated precipitation
-            accum,flag,attr = qcutils.GetSeries(ds_60minutes,label)
+            accum,flag,attr = pfp_utils.GetSeries(ds_60minutes,label)
             # get the 30 minute precipitation
             precip = numpy.ediff1d(accum,to_begin=0)
             # now we deal with the reset of accumulated precipitation at 00, 06, 12 and 18 UTC
@@ -492,7 +492,7 @@ def get_instantaneous_precip60(ds_60minutes):
             # set some variable attributes
             attr["long_name"] = "Precipitation total over time step"
             attr["units"] = "mm/60 minutes"
-            qcutils.CreateSeries(ds_60minutes,label,precip,Flag=flag,Attr=attr)
+            pfp_utils.CreateSeries(ds_60minutes,label,precip,Flag=flag,Attr=attr)
 
 def access_read_mfiles2(file_list):
 
@@ -541,7 +541,7 @@ def access_read_mfiles2(file_list):
         for var in var_list:
             # get the name of the variable in the ACCESS file
             try:
-                access_name = var_dict[var] #qcutils.get_keyvaluefromcf(cf,["Variables",var],"access_name",default=var)
+                access_name = var_dict[var] #pfp_utils.get_keyvaluefromcf(cf,["Variables",var],"access_name",default=var)
             except KeyError:
                 access_name = var
             # check that the requested variable exists in the ACCESS file
@@ -671,7 +671,7 @@ master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 
 # get the control file name from the command line
 #cf_name = sys.argv[1]
-#cf_name = qcio.get_controlfilename(path='../controlfiles',title='Choose a control file')
+#cf_name = pfp_io.get_controlfilename(path='../controlfiles',title='Choose a control file')
 # get the control file contents
 logging.info('Building configurations...')
 
@@ -704,7 +704,7 @@ for this_month in run_list:
         logging.info("Processing site "+info["site_name"])
         # instance the data structures
         logging.info('Creating the data structures')
-        ds_60minutes = qcio.DataStructure()
+        ds_60minutes = pfp_io.DataStructure()
         # get a sorted list of files that match the mask in the control file
         file_list = sorted(glob.glob(info["in_filename"]))
         # read the netcdf files
@@ -722,12 +722,12 @@ for this_month in run_list:
         set_globalattributes(ds_60minutes,info)
         # check for time gaps in the file
         logging.info("Checking for time gaps")
-        if qcutils.CheckTimeStep(ds_60minutes):
-            qcutils.FixTimeStep(ds_60minutes)
+        if pfp_utils.CheckTimeStep(ds_60minutes):
+            pfp_utils.FixTimeStep(ds_60minutes)
         # get the datetime in some different formats
         logging.info('Getting xlDateTime and YMDHMS')
-        qcutils.get_xldatefromdatetime(ds_60minutes)
-        qcutils.get_ymdhmsfromdatetime(ds_60minutes)
+        pfp_utils.get_xldatefromdatetime(ds_60minutes)
+        pfp_utils.get_ymdhmsfromdatetime(ds_60minutes)
         #f.close()
         # get derived quantities and adjust units
         logging.info("Changing units and getting derived quantities")
@@ -759,14 +759,14 @@ for this_month in run_list:
             get_instantaneous_precip30(ds_30minutes)
             # write to netCDF file
             logging.info("Writing 30 minute data to netCDF file")
-            ncfile = qcio.nc_open_write(info["out_filename"])
-            qcio.nc_write_series(ncfile, ds_30minutes,ndims=1)
+            ncfile = pfp_io.nc_open_write(info["out_filename"])
+            pfp_io.nc_write_series(ncfile, ds_30minutes,ndims=1)
         else:
             # get instantaneous precipitation from accumulated precipitation
             get_instantaneous_precip60(ds_60minutes)
             # write to netCDF file
             logging.info("Writing 60 minute data to netCDF file")
-            ncfile = qcio.nc_open_write(info["out_filename"])
-            qcio.nc_write_series(ncfile, ds_60minutes,ndims=1)
+            ncfile = pfp_io.nc_open_write(info["out_filename"])
+            pfp_io.nc_write_series(ncfile, ds_60minutes,ndims=1)
 
 logging.info('All done!')
