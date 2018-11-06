@@ -11,9 +11,11 @@ import datetime as dt
 import netCDF4
 import numpy as np
 import numpy.ma as ma
+import operator
 import os
 import pandas as pd
 from pytz import timezone
+from pytz.exceptions import NonExistentTimeError, AmbiguousTimeError
 import requests
 from timezonefinder import TimezoneFinder as tzf
 import xlrd
@@ -60,14 +62,32 @@ def check_seen_records(sites_df, data_file_path, server_ID_list):
 #------------------------------------------------------------------------------
 def convert_utc(dates, lat, lon, direction):
     """Convert to or from utc"""
-    
+#    
+#    if not direction in ['from_utc', 'to_utc']:
+#        raise KeyError('direction parameter must be either to_utc or from_utc')
+#    tz = timezone(tzf().timezone_at(lat = lat, lng = lon))
+#    if direction == 'to_utc':
+#        return map(lambda x: x - (tz.utcoffset(x) - tz.dst(x)), dates)
+#    else:
+#        return map(lambda x: x + (tz.utcoffset(x) - tz.dst(x)), dates)
+    ops = {'+': operator.add, '-': operator.sub}
+
     if not direction in ['from_utc', 'to_utc']:
         raise KeyError('direction parameter must be either to_utc or from_utc')
+    op = ops['-'] if direction == 'to_utc' else ops['+']
     tz = timezone(tzf().timezone_at(lat = lat, lng = lon))
-    if direction == 'to_utc':
-        return map(lambda x: x - (tz.utcoffset(x) - tz.dst(x)), dates)
-    else:
-        return map(lambda x: x + (tz.utcoffset(x) - tz.dst(x)), dates)
+    l = []
+    for date in dates:
+        try:
+            offset = tz.utcoffset(date) - tz.dst(date)
+        except NonExistentTimeError:
+            trim_date = date - dt.timedelta(seconds = 3600)
+            offset = tz.utcoffset(trim_date) - tz.dst(trim_date)
+        except AmbiguousTimeError:
+            trim_date = date + dt.timedelta(seconds = 3600)
+            offset = tz.utcoffset(trim_date) - tz.dst(trim_date)
+        l.append(op(date, offset))
+    return l
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
