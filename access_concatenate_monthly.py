@@ -14,8 +14,8 @@ import xlwt
 # since the scripts directory is there, try importing the modules
 sys.path.append('/mnt/PyFluxPro/scripts')
 # PFP
-import qcio
-import qclog
+import pfp_io
+import pfp_log
 
 #------------------------------------------------------------------------------
 # Functions                                                                   #
@@ -67,7 +67,7 @@ access_base_path = "/rdsi/market/access_opendap/monthly"
 t = time.localtime()
 rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
 log_filename = 'access_concatenate_'+rundatetime+'.log'
-logger = qclog.init_logger(logger_name="pfp_log", file_handler=log_filename)
+logger = pfp_log.init_logger(logger_name="pfp_log", file_handler=log_filename)
 
 # Check for new months of data
 logger.info("Getting a list of months available for concatenation")
@@ -144,7 +144,7 @@ for site in site_list:
                                        ('Files', files_dict)])
 
             # Do the concatenation
-            qcio.nc_concatenate(config_dict)
+            pfp_io.nc_concatenate(config_dict)
 
 logger.info("")
 logger.info("access_concatenate: all done")
