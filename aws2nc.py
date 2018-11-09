@@ -11,13 +11,13 @@ import time
 import xlrd
 
 # Import custom modules
-sys.path.append('/mnt/PyFluxPro//scripts')
+sys.path.append('/mnt/PyFluxPro/scripts')
 import constants as c
 import grunt_email
 import meteorologicalfunctions as mf
-import qcio
-import qcts
-import qcutils
+import pfp_io
+import pfp_ts
+import pfp_utils
 
 mail_recipients = ['ian.mchugh@monash.edu']
 
@@ -48,12 +48,12 @@ def downsample_aws(in_path, master_file_pathname):
             logging.info('Conversion already complete!')
             continue
         logging.info('Conversion required! Starting now...')
-        ds_aws_30minute = qcio.nc_read_series(aws_name)
-        has_gaps = qcutils.CheckTimeStep(ds_aws_30minute)
+        ds_aws_30minute = pfp_io.nc_read_series(aws_name)
+        has_gaps = pfp_utils.CheckTimeStep(ds_aws_30minute)
         if has_gaps:
             print "Problems found with time step"
-            qcutils.FixTimeStep(ds_aws_30minute)
-            qcutils.get_ymdhmsfromdatetime(ds_aws_30minute)
+            pfp_utils.FixTimeStep(ds_aws_30minute)
+            pfp_utils.get_ymdhmsfromdatetime(ds_aws_30minute)
         dt_aws_30minute = ds_aws_30minute.series["DateTime"]["Data"]
         ddt=[dt_aws_30minute[i+1]-dt_aws_30minute[i] for i in range(0,len(dt_aws_30minute)-1)]
         print "Minimum time step is",min(ddt)," Maximum time step is",max(ddt)
@@ -61,8 +61,8 @@ def downsample_aws(in_path, master_file_pathname):
         dt_aws_30minute = ds_aws_30minute.series["DateTime"]["Data"]
         start_date = dt_aws_30minute[0]
         end_date = dt_aws_30minute[-1]
-        si_wholehour = qcutils.GetDateIndex(dt_aws_30minute,str(start_date),ts=30,match="startnexthour")
-        ei_wholehour = qcutils.GetDateIndex(dt_aws_30minute,str(end_date),ts=30,match="endprevioushour")
+        si_wholehour = pfp_utils.GetDateIndex(dt_aws_30minute,str(start_date),ts=30,match="startnexthour")
+        ei_wholehour = pfp_utils.GetDateIndex(dt_aws_30minute,str(end_date),ts=30,match="endprevioushour")
         start_date = dt_aws_30minute[si_wholehour]
         end_date = dt_aws_30minute[ei_wholehour]
         dt_aws_30minute_array = numpy.array(dt_aws_30minute[si_wholehour:ei_wholehour+1])
@@ -76,7 +76,7 @@ def downsample_aws(in_path, master_file_pathname):
             if item in series_list: series_list.remove(item)
             
         # get the 60 minute data structure
-        ds_aws_60minute = qcio.DataStructure()
+        ds_aws_60minute = pfp_io.DataStructure()
         # get the global attributes
         for item in ds_aws_30minute.globalattributes.keys():
             ds_aws_60minute.globalattributes[item] = ds_aws_30minute.globalattributes[item]
@@ -87,51 +87,51 @@ def downsample_aws(in_path, master_file_pathname):
         ds_aws_60minute.series["DateTime"] = {}
         ds_aws_60minute.series["DateTime"]["Data"] = dt_aws_60minute
         ds_aws_60minute.series["DateTime"]["Flag"] = numpy.zeros(nRecs_60minute,dtype=numpy.int32)
-        ds_aws_60minute.series["DateTime"]["Attr"] = qcutils.MakeAttributeDictionary(long_name="DateTime in local time zone",units="None")
+        ds_aws_60minute.series["DateTime"]["Attr"] = pfp_utils.MakeAttributeDictionary(long_name="DateTime in local time zone",units="None")
         # add the Excel datetime, year, month etc
-        qcutils.get_xldatefromdatetime(ds_aws_60minute)
-        qcutils.get_ymdhmsfromdatetime(ds_aws_60minute)
+        pfp_utils.get_xldatefromdatetime(ds_aws_60minute)
+        pfp_utils.get_ymdhmsfromdatetime(ds_aws_60minute)
         # loop over the series and take the average (every thing but Precip) or sum (Precip)
         for item in series_list:
             if "Precip" in item:
-                data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                data_30minute,flag_30minute,attr = pfp_utils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
                 data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
                 flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
                 data_60minute = numpy.ma.sum(data_2d,axis=1)
                 flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
+                pfp_utils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)
             elif "Wd" in item:
                 ws_name = item.replace('d', 's')
                 if ws_name in series_list:
-                    Wd_30minute = qcutils.GetVariable(ds_aws_30minute, item, start_date, end_date)
-                    Ws_30minute = qcutils.GetVariable(ds_aws_30minute, ws_name, start_date, end_date)
-                    U_30minute,V_30minute = qcutils.convert_WSWDtoUV(Ws_30minute,Wd_30minute)
+                    Wd_30minute = pfp_utils.GetVariable(ds_aws_30minute, item, start_date, end_date)
+                    Ws_30minute = pfp_utils.GetVariable(ds_aws_30minute, ws_name, start_date, end_date)
+                    U_30minute,V_30minute = pfp_utils.convert_WSWDtoUV(Ws_30minute,Wd_30minute)
                     U_2d = numpy.reshape(U_30minute['Data'],(nRecs_30minute/2,2))
                     V_2d = numpy.reshape(V_30minute['Data'],(nRecs_30minute/2,2))
                     flag_2d = numpy.reshape(Wd_30minute['Flag'] + Ws_30minute['Flag'],(nRecs_30minute/2,2))
                     U_60minute = numpy.ma.sum(U_2d,axis=1)
                     V_60minute = numpy.ma.sum(V_2d,axis=1)
                     flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                    Ws_60minute,Wd_60minute = qcutils.convert_UVtoWSWD({'Data': U_60minute} ,{'Data': V_60minute})
-                    qcutils.CreateSeries(ds_aws_60minute,item,Wd_60minute['Data'],Flag=flag_60minute,Attr=Wd_30minute['Attr'])
-                    qcutils.CreateSeries(ds_aws_60minute,ws_name,Ws_60minute['Data'],Flag=flag_60minute,Attr=Ws_30minute['Attr'])
+                    Ws_60minute,Wd_60minute = pfp_utils.convert_UVtoWSWD({'Data': U_60minute} ,{'Data': V_60minute})
+                    pfp_utils.CreateSeries(ds_aws_60minute,item,Wd_60minute['Data'],Flag=flag_60minute,Attr=Wd_30minute['Attr'])
+                    pfp_utils.CreateSeries(ds_aws_60minute,ws_name,Ws_60minute['Data'],Flag=flag_60minute,Attr=Ws_30minute['Attr'])
             elif "Ws" in item:
                 continue
             else:
-                data_30minute,flag_30minute,attr = qcutils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
+                data_30minute,flag_30minute,attr = pfp_utils.GetSeriesasMA(ds_aws_30minute,item,si=si_wholehour,ei=ei_wholehour)
                 data_2d = numpy.reshape(data_30minute,(nRecs_30minute/2,2))
                 flag_2d = numpy.reshape(flag_30minute,(nRecs_30minute/2,2))
                 data_60minute = numpy.ma.average(data_2d,axis=1)
                 flag_60minute = numpy.ma.max(flag_2d,axis=1)
-                qcutils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)  
+                pfp_utils.CreateSeries(ds_aws_60minute,item,data_60minute,Flag=flag_60minute,Attr=attr)  
 
         # write out the 60 minute data
         aws_30min_name = aws_name.replace('.nc','_30minute.nc')
         if os.path.isfile(aws_30min_name):
             os.remove(aws_30min_name)
         os.rename(aws_name, aws_30min_name) 
-        ncfile = qcio.nc_open_write(aws_name)
-        qcio.nc_write_series(ncfile, ds_aws_60minute, ndims=1)
+        ncfile = pfp_io.nc_open_write(aws_name)
+        pfp_io.nc_write_series(ncfile, ds_aws_60minute, ndims=1)
         print 'Conversion complete!'
 #------------------------------------------------------------------------------
 
@@ -227,7 +227,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
         for bom_id in data_dict.keys():
             logging.info("Processing BoM station: "+str(bom_id))
             # create a data structure
-            ds=qcio.DataStructure()
+            ds=pfp_io.DataStructure()
             # put the year, month, day, hour and minute into the data structure
             nRecs = data_dict[bom_id].shape[0]
             ds.globalattributes["nc_nrecs"] = nRecs
@@ -236,56 +236,56 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             ds.globalattributes["longitude"] = bom_sites_info[site_name][str(bom_id)]["longitude"]
             flag = numpy.zeros(nRecs,dtype=numpy.int32)
             Seconds = numpy.zeros(nRecs,dtype=numpy.float64)
-            qcutils.CreateSeries(ds,'Year',data_dict[bom_id][:,1],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Year',units='none'))
-            qcutils.CreateSeries(ds,'Month',data_dict[bom_id][:,2],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Month',units='none'))
-            qcutils.CreateSeries(ds,'Day',data_dict[bom_id][:,3],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Day',units='none'))
-            qcutils.CreateSeries(ds,'Hour',data_dict[bom_id][:,4],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Hour',units='none'))
-            qcutils.CreateSeries(ds,'Minute',data_dict[bom_id][:,5],Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Minute',units='none'))
-            qcutils.CreateSeries(ds,'Second',Seconds,Flag=flag,Attr=qcutils.MakeAttributeDictionary(long_name='Second',units='none'))
+            pfp_utils.CreateSeries(ds,'Year',data_dict[bom_id][:,1],Flag=flag,Attr=pfp_utils.MakeAttributeDictionary(long_name='Year',units='none'))
+            pfp_utils.CreateSeries(ds,'Month',data_dict[bom_id][:,2],Flag=flag,Attr=pfp_utils.MakeAttributeDictionary(long_name='Month',units='none'))
+            pfp_utils.CreateSeries(ds,'Day',data_dict[bom_id][:,3],Flag=flag,Attr=pfp_utils.MakeAttributeDictionary(long_name='Day',units='none'))
+            pfp_utils.CreateSeries(ds,'Hour',data_dict[bom_id][:,4],Flag=flag,Attr=pfp_utils.MakeAttributeDictionary(long_name='Hour',units='none'))
+            pfp_utils.CreateSeries(ds,'Minute',data_dict[bom_id][:,5],Flag=flag,Attr=pfp_utils.MakeAttributeDictionary(long_name='Minute',units='none'))
+            pfp_utils.CreateSeries(ds,'Second',Seconds,Flag=flag,Attr=pfp_utils.MakeAttributeDictionary(long_name='Second',units='none'))
             # now get the Python datetime 
-            qcutils.get_datetimefromymdhms(ds)
+            pfp_utils.get_datetimefromymdhms(ds)
             # now put the data into the data structure
-            attr=qcutils.MakeAttributeDictionary(long_name='Precipitation since 0900',units='mm',
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Precipitation since 0900',units='mm',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'Precip',data_dict[bom_id][:,6],Flag=flag,Attr=attr)
-            attr=qcutils.MakeAttributeDictionary(long_name='Air temperature',units='C',
+            pfp_utils.CreateSeries(ds,'Precip',data_dict[bom_id][:,6],Flag=flag,Attr=attr)
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Air temperature',units='C',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'Ta',data_dict[bom_id][:,7],Flag=flag,Attr=attr)
-            attr=qcutils.MakeAttributeDictionary(long_name='Dew point temperature',units='C',
+            pfp_utils.CreateSeries(ds,'Ta',data_dict[bom_id][:,7],Flag=flag,Attr=attr)
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Dew point temperature',units='C',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'Td',data_dict[bom_id][:,8],Flag=flag,Attr=attr)
-            attr=qcutils.MakeAttributeDictionary(long_name='Relative humidity',units='%',
+            pfp_utils.CreateSeries(ds,'Td',data_dict[bom_id][:,8],Flag=flag,Attr=attr)
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Relative humidity',units='%',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'RH',data_dict[bom_id][:,9],Flag=flag,Attr=attr)
-            attr=qcutils.MakeAttributeDictionary(long_name='Wind speed',units='m/s',
+            pfp_utils.CreateSeries(ds,'RH',data_dict[bom_id][:,9],Flag=flag,Attr=attr)
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Wind speed',units='m/s',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'Ws',data_dict[bom_id][:,10],Flag=flag,Attr=attr)
-            attr=qcutils.MakeAttributeDictionary(long_name='Wind direction',units='degT',
+            pfp_utils.CreateSeries(ds,'Ws',data_dict[bom_id][:,10],Flag=flag,Attr=attr)
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Wind direction',units='degT',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'Wd',data_dict[bom_id][:,11],Flag=flag,Attr=attr)
-            attr=qcutils.MakeAttributeDictionary(long_name='Wind gust',units='m/s',
+            pfp_utils.CreateSeries(ds,'Wd',data_dict[bom_id][:,11],Flag=flag,Attr=attr)
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Wind gust',units='m/s',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'Wg',data_dict[bom_id][:,12],Flag=flag,Attr=attr)
+            pfp_utils.CreateSeries(ds,'Wg',data_dict[bom_id][:,12],Flag=flag,Attr=attr)
             data_dict[bom_id][:,13] = data_dict[bom_id][:,13]/float(10)
-            attr=qcutils.MakeAttributeDictionary(long_name='Air Pressure',units='kPa',
+            attr=pfp_utils.MakeAttributeDictionary(long_name='Air Pressure',units='kPa',
                                                  bom_id=str(bom_id),bom_name=bom_sites_info[site_name][str(bom_id)]["site_name"],
                                                  bom_dist=bom_sites_info[site_name][str(bom_id)]["distance"])
-            qcutils.CreateSeries(ds,'ps',data_dict[bom_id][:,13],Flag=flag,Attr=attr)
+            pfp_utils.CreateSeries(ds,'ps',data_dict[bom_id][:,13],Flag=flag,Attr=attr)
             # fix any time stamp issues
-            if qcutils.CheckTimeStep(ds):
-                qcutils.FixTimeStep(ds)
+            if pfp_utils.CheckTimeStep(ds):
+                pfp_utils.FixTimeStep(ds)
                 # update the Year, Month, Day etc from the Python datetime
-                qcutils.get_ymdhmsfromdatetime(ds)
+                pfp_utils.get_ymdhmsfromdatetime(ds)
             # now interpolate
             for label in ["Precip","Ta","Td","RH","Ws","Wd","Wg","ps"]:
-                qcts.InterpolateOverMissing(ds,series=label,maxlen=2)
+                pfp_ts.InterpolateOverMissing(ds,series=label,maxlen=2)
             # put this stations data into the data structure dictionary
             ds_dict[bom_id] = ds
 
@@ -308,7 +308,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
     
         # merge the individual data structures into a single one
         logging.info("Merging file contents")
-        ds_all = qcio.DataStructure()
+        ds_all = pfp_io.DataStructure()
         ds_all.globalattributes["time_step"] = 30
         ds_all.globalattributes["xl_datemode"] = 0
         ds_all.globalattributes["site_name"] = site_name
@@ -316,7 +316,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
         ds_all.globalattributes["longitude"] = site_longitude
         ds_all.globalattributes["elevation"] = site_elevation
         ts = int(ds_all.globalattributes["time_step"])
-        ldt_all = numpy.array([result for result in qcutils.perdelta(start_date,end_date,datetime.timedelta(minutes=ts))])
+        ldt_all = numpy.array([result for result in pfp_utils.perdelta(start_date,end_date,datetime.timedelta(minutes=ts))])
         nRecs = len(ldt_all)
         ds_all.globalattributes["nc_nrecs"] = nRecs
         ds_all.series["DateTime"] = {}
@@ -327,27 +327,27 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
         ds_all.series['DateTime']["Attr"]["long_name"] = "Date-time object"
         ds_all.series['DateTime']["Attr"]["units"] = "None"
         # get the year, month, day, hour, minute and seconds from the Python datetime
-        qcutils.get_ymdhmsfromdatetime(ds_all)
+        pfp_utils.get_ymdhmsfromdatetime(ds_all)
         # get the xlDateTime from the 
-        xlDateTime = qcutils.get_xldatefromdatetime(ds_all)
-        attr = qcutils.MakeAttributeDictionary(long_name="Date/time in Excel format",units="days since 1899-12-31 00:00:00")
-        qcutils.CreateSeries(ds_all,"xlDateTime",xlDateTime,Flag=flag,Attr=attr)
+        xlDateTime = pfp_utils.get_xldatefromdatetime(ds_all)
+        attr = pfp_utils.MakeAttributeDictionary(long_name="Date/time in Excel format",units="days since 1899-12-31 00:00:00")
+        pfp_utils.CreateSeries(ds_all,"xlDateTime",xlDateTime,Flag=flag,Attr=attr)
         # loop over the stations
         for idx,bom_id in enumerate(ds_dict.keys()):
             logging.info("Merging BoM site: "+str(bom_id))
             ds = ds_dict[bom_id]
             ldt = ds.series["DateTime"]["Data"]
-            index = qcutils.FindMatchingIndices(ldt,ldt_all)[1]
+            index = pfp_utils.FindMatchingIndices(ldt,ldt_all)[1]
             # loop over the variables
             for label in ["Precip","Ta","Td","RH","Ws","Wd","Wg","ps"]:
                 data_all = numpy.ma.ones(nRecs,dtype=numpy.float64)*float(c.missing_value)
                 flag_all = numpy.zeros(nRecs,dtype=numpy.int32)
-                data,flag,attr = qcutils.GetSeriesasMA(ds,label)
+                data,flag,attr = pfp_utils.GetSeriesasMA(ds,label)
                 data_all[index] = data
                 flag_all[index] = flag
                 output_label = label+"_"+str(idx)
                 attr["bom_id"] = str(bom_id)
-                qcutils.CreateSeries(ds_all,output_label,data_all,Flag=flag_all,Attr=attr)
+                pfp_utils.CreateSeries(ds_all,output_label,data_all,Flag=flag_all,Attr=attr)
         # get precipitation per time step
         # now get precipitation per time step from the interpolated precipitation accumulated over the day
         precip_list = [x for x in ds_all.series.keys() if ("Precip" in x) and ("_QCFlag" not in x)]
@@ -355,7 +355,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
         logging.info("Converting 24 hour accumulated precipitation")
         for output_label in precip_list:
             # getthe accumlated precipitation
-            accum_data,accum_flag,accum_attr = qcutils.GetSeriesasMA(ds_all,output_label)
+            accum_data,accum_flag,accum_attr = pfp_utils.GetSeriesasMA(ds_all,output_label)
             # make the flag a masked array
             accum_flag = numpy.ma.array(accum_flag)
             # round small precipitations to 0
@@ -389,23 +389,23 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             accum_attr["long_name"] = "Precipitation total over time step"
             accum_attr["units"] = "mm/30 minutes"
             # put the precipitation per time step back into the data struicture
-            qcutils.CreateSeries(ds_all,output_label,precip,Flag=accum_flag,Attr=accum_attr)
+            pfp_utils.CreateSeries(ds_all,output_label,precip,Flag=accum_flag,Attr=accum_attr)
         # calculate missing humidities
         RH_list = sorted([x for x in ds_all.series.keys() if ("RH" in x) and ("_QCFlag" not in x)])
         Ta_list = sorted([x for x in ds_all.series.keys() if ("Ta" in x) and ("_QCFlag" not in x)])
         ps_list = sorted([x for x in ds_all.series.keys() if ("ps" in x) and ("_QCFlag" not in x)])
         for RH_label,Ta_label,ps_label in zip(RH_list,Ta_list,ps_list):
-            Ta,f,a = qcutils.GetSeriesasMA(ds_all,Ta_label)
-            RH,f,a = qcutils.GetSeriesasMA(ds_all,RH_label)
-            ps,f,a = qcutils.GetSeriesasMA(ds_all,ps_label)
+            Ta,f,a = pfp_utils.GetSeriesasMA(ds_all,Ta_label)
+            RH,f,a = pfp_utils.GetSeriesasMA(ds_all,RH_label)
+            ps,f,a = pfp_utils.GetSeriesasMA(ds_all,ps_label)
             Ah = mf.absolutehumidityfromRH(Ta, RH)
-            attr = qcutils.MakeAttributeDictionary(long_name='Absolute humidity',units='g/m3',standard_name='not defined',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Absolute humidity',units='g/m3',standard_name='not defined',
                                                    bom_id=a["bom_id"],bom_name=a["bom_name"],bom_dist=a["bom_dist"])
-            qcutils.CreateSeries(ds_all,RH_label.replace("RH","Ah"),Ah,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_all,RH_label.replace("RH","Ah"),Ah,Flag=f,Attr=attr)
             q = mf.specifichumidityfromRH(RH, Ta, ps)
-            attr = qcutils.MakeAttributeDictionary(long_name='Specific humidity',units='kg/kg',standard_name='not defined',
+            attr = pfp_utils.MakeAttributeDictionary(long_name='Specific humidity',units='kg/kg',standard_name='not defined',
                                                    bom_id=a["bom_id"],bom_name=a["bom_name"],bom_dist=a["bom_dist"])
-            qcutils.CreateSeries(ds_all,RH_label.replace("RH","q"),q,Flag=f,Attr=attr)
+            pfp_utils.CreateSeries(ds_all,RH_label.replace("RH","q"),q,Flag=f,Attr=attr)
         
         # now write the data structure to file
         # OMG, the user may want to overwrite the old data ...
@@ -433,8 +433,8 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             # ... and rename the old file to preserve it
             os.rename(ncname,newFileName)
             # now the old file will not be overwritten
-        ncfile = qcio.nc_open_write(ncname)
-        qcio.nc_write_series(ncfile,ds_all,ndims=1)
+        ncfile = pfp_io.nc_open_write(ncname)
+        pfp_io.nc_write_series(ncfile,ds_all,ndims=1)
         logging.info("Finished site: "+site_name)
 #------------------------------------------------------------------------------
 
@@ -445,7 +445,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
 # Set up logging    
 t = time.localtime()
 rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
-log_filename = '/mnt/OzFlux/test_code/data_acquisition/logfiles/AWS/aws2nc_'+rundatetime+'.log'
+log_filename = '/mnt/OzFlux/Logfiles/AWS/aws2nc_'+rundatetime+'.log'
 logging.basicConfig(filename=log_filename,
                     format='%(asctime)s %(levelname)s %(message)s',
                     datefmt = '%H:%M:%S',
