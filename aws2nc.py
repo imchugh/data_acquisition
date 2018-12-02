@@ -11,7 +11,7 @@ import time
 import xlrd
 
 # Import custom modules
-sys.path.append('/mnt/PyFluxPro/scripts')
+sys.path.append('/mnt/PyFluxPro_V0.2.0/scripts')
 import constants as c
 import grunt_email
 import meteorologicalfunctions as mf
