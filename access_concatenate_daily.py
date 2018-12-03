@@ -26,7 +26,7 @@ import sys
 from timezonefinder import TimezoneFinder as tzf
 import xlrd
 # since the scripts directory is there, try importing the modules
-sys.path.append('/mnt/PyFluxPro/scripts')
+sys.path.append('/mnt/PyFluxPro_V0.2.0/scripts')
 # PFP
 import constants as c
 import meteorologicalfunctions as mf
