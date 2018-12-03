@@ -37,6 +37,12 @@ def get_ozflux_site_list(master_file_path):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+def get_files_from_datestring(datestring):
+    
+    return map(lambda x: '{}_{}'.format(datestring, str(x).zfill(3)), range(6))
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def list_opendap_dirs(url, ext = 'html'):
     """Scrape list of directories from opendap surface url"""
     
@@ -69,7 +75,7 @@ def check_file_dates(nc):
     hour_str = map(lambda x: x.zfill(3), np.mod(hour, 6).astype('str'))
     date_list = map(lambda x: base_date + dt.timedelta(hours = x), hour_mod)
     str_date_list = map(lambda x: dt.datetime.strftime(x, '%Y%m%d%H'), date_list)
-    return map(lambda x: 'ACCESS-R_{0}_{1}_surface.nc'.format(x[0], x[1]), 
+    return map(lambda x: '{0}_{1}'.format(x[0], x[1]), 
                zip(str_date_list, hour_str))
 #------------------------------------------------------------------------------
 
@@ -93,61 +99,57 @@ wget = '/usr/bin/wget -nv -a Download.log -O'
 
 if not os.path.exists(output_path): os.makedirs(output_path)
 
-for this_dir in current_dirs:
-    local_dir = os.path.join(output_path, this_dir[:6])
-    if not os.path.exists(local_dir): os.makedirs(local_dir)        
-    for i in range(6):
-        target_fname = 'ACCESS-R_{0}_{1}_surface.nc'.format(this_dir, 
-                                                            str(i).zfill(3))
-        target_path = os.path.join(prot + svr + b_pth + this_dir, target_fname)
-        cmd = '{0} {1} {2}'.format(wget, tmp_path, target_path)
-        if spc(cmd, shell=True):
-            print 'Error in command: ', cmd
-        else:
-            for site in [site_df.index[0]]:
-                site_name = site.replace(' ', '_')
-                existing_fname = os.path.join(local_dir, '{}.nc'.format(site_name))
-                tmp_fname = os.path.join(local_dir, '.{}.nc'.format(site_name))
-                lat = site_df.loc[site, 'Latitude']
-                lon = site_df.loc[site, 'Longitude']
-                print site_name, lat, lon
-                lat_range = str(lat - delta) + ',' + str(lat + delta)
-                lon_range = str(lon - delta) + ',' + str(lon + delta)
-                ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
-                        .format(lat_range, lon_range, tmp_path, tmp_fname))
-                if spc(ncks, shell = True):
-                    print 'Error in command: ', ncks
-                if not os.path.exists(existing_fname):
-                    os.rename(tmp_fname, existing_fname)
-                else:
-                    ncrcat = (r'/usr/bin/ncrcat -rec_apn {0} {1}'
-                              .format(os.path.join(local_dir, existing_fname), 
-                                      os.path.join(local_dir, tmp_fname)))
-                    if spc(ncrcat, shell=True):
-                        pdb.set_trace()
-                        print 'Error in command: ', ncrcat
-                    else:
-                        print 'Tick'
-                    os.remove(tmp_fname)
-            os.remove(tmp_path)
-#    for site in site_df.index:
-#        sname = site.replace(' ', '_')
-#        site_out_path = os.path.join(local_dir, sname)
-#        ncrcat = (r'/usr/bin/ncrcat {0}_{1}_00[012345].nc {2}.nc'
-#                  .format(os.path.join(local_dir, sname), this_dir, 
-#                          site_out_path))
-#        if spc(ncrcat, shell=True):
-#            print 'Error in command: ', ncrcat
-#        else:
-#            print 'Tick'    
+#for this_dir in [current_dirs[0]]:
+#    local_dir = os.path.join(output_path, this_dir[:6])
+#    if not os.path.exists(local_dir): os.makedirs(local_dir)        
+#    for i in range(6):
+#        server_fpath = os.path.join(prot + svr + b_pth + this_dir,
+#                                    'ACCESS-R_{0}_{1}_surface.nc'
+#                                    .format(this_dir, str(i).zfill(3)))
+#        cmd = '{0} {1} {2}'.format(wget, tmp_path, server_fpath)
+#        if spc(cmd, shell=True):
+#            print 'Error in command: ', cmd
+#            continue
+#        print 'Extracting data for date {} for site: '.format(this_dir)
+#        for site in site_df.index:
+#            print site,
+#            site_name = site.replace(' ', '_')
+#            existing_fname = os.path.join(local_dir, '{}.nc'.format(site_name))
+#            tmp_fname = os.path.join(local_dir, '.{}.nc'.format(site_name))
+#            lat = site_df.loc[site, 'Latitude']
+#            lon = site_df.loc[site, 'Longitude']
+#            lat_range = str(lat - delta) + ',' + str(lat + delta)
+#            lon_range = str(lon - delta) + ',' + str(lon + delta)
+#            ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
+#                    .format(lat_range, lon_range, tmp_path, tmp_fname))
+#            if spc(ncks, shell = True):
+#                print 'Error in command: ', ncks
+#            if not os.path.exists(existing_fname):
+#                os.rename(tmp_fname, existing_fname)
+#            else:
+#                ncrcat = (r'/usr/bin/ncrcat --rec_apn {0} {1}'
+#                          .format(os.path.join(local_dir, tmp_fname), 
+#                                  os.path.join(local_dir, existing_fname)))
+#                if spc(ncrcat, shell=True):
+#                    print 'Error in command: ', ncrcat
+#                os.remove(tmp_fname)
+#        os.remove(tmp_path)
+#        print   
 
-concat_file_list = map(lambda x: '{}.nc'.format(x), site_df.index)
-for f in concat_file_list:
-    target = os.path.join(output_path, '201811', f)
+
+cols = []
+for x in current_dirs: cols += get_files_from_datestring(x)
+new_df = pd.DataFrame(index = cols, columns = site_df.index)
+for site in new_df.columns:
+    target = os.path.join(output_path, '201811', '{}.nc'.format(site))
     nc = netCDF4.Dataset(target)
     seen_files = check_file_dates(nc)
-    print ('The following files have been concatenated to {0}: {1}'
-           .format(f, ', '.join(seen_files)))
+    l = map(lambda x: x in seen_files, cols)
+    new_df[site] = l
+new_df = new_df.T
+
+#    for f in seen_files:
+#        new_df.loc[site, f] = True
 
 print ' --- All done ---'
 
