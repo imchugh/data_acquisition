@@ -19,6 +19,7 @@ from pytz.exceptions import NonExistentTimeError, AmbiguousTimeError
 import requests
 from timezonefinder import TimezoneFinder as tzf
 import xlrd
+import pdb
       
 #------------------------------------------------------------------------------
 # PROCESSING ALGORITHMS
@@ -140,7 +141,7 @@ def get_site_coordinate_indices(coords_s, lats_list, lons_list):
 def get_site_data(nc, coords_s):
     '''Get date and time, then iterate through variable list and call 
        subroutine to get site data subset from nc file'''
-    
+       
     indices_dict = get_site_coordinate_indices(coords_s,
                                                nc.variables['lat'][:].data,
                                                nc.variables['lon'][:].data)
