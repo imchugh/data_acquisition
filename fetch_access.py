@@ -6,17 +6,68 @@ Created on Mon Nov 19 14:55:15 2018
 @author: ian
 """
 
-import os, sys
-from subprocess import call as spc
-from datetime import date, timedelta
 from bs4 import BeautifulSoup
 import datetime as dt
+import netCDF4
 import numpy as np
+import os
 import pandas as pd
 import requests
+from subprocess import call as spc
 import xlrd
 
 import pdb
+
+#------------------------------------------------------------------------------
+def check_file_dates(nc):
+    """Check which files have already been seen and written"""
+    
+    base_date_str = getattr(nc.variables['time'], 'units')
+    base_date = dt.datetime.strptime(' '.join(base_date_str.split(' ')[2:4]), 
+                                     '%Y-%m-%d %H:%M:%S')
+    hour = (nc.variables['time'][:].data * 24).astype(int)
+    hour_mod = hour / 6 * 6
+    hour_str = map(lambda x: x.zfill(3), np.mod(hour, 6).astype('str'))
+    date_list = map(lambda x: base_date + dt.timedelta(hours = x), hour_mod)
+    str_date_list = map(lambda x: dt.datetime.strftime(x, '%Y%m%d%H'), date_list)
+    return map(lambda x: '{0}_{1}'.format(x[0], x[1]), 
+               zip(str_date_list, hour_str))
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def check_seen_files(site_list, server_dirs):
+    """Opens existing files and cross-checks what is available on server
+       against what has already been written to local file"""
+    
+    local_dirs = list(set(map(lambda x: x[:6], server_dirs)))
+    idx = []
+    for x in server_dirs: idx += get_files_from_datestring(x)
+    new_df = pd.DataFrame(index = idx, columns = site_list)
+    for site in new_df.columns:
+        seen_files = []
+        for this_dir in local_dirs:
+            target = os.path.join(output_path, this_dir, '{}.nc'.format(site))
+            try:
+                nc = netCDF4.Dataset(target)
+                seen_files += check_file_dates(nc)
+            except IOError:
+                pass
+        new_df[site] = map(lambda x: x in seen_files, idx)
+    new_df = new_df.T
+    seen_file_dict = {}
+    for site in new_df.columns:
+        l = list(new_df[new_df[site]==False].index)
+        seen_file_dict[site] = l    
+    return seen_file_dict
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_files_from_datestring(datestring):
+    """Turn standard datestring format for ACCESS directories into list of 
+       file IDs (0-5)"""
+    
+    return map(lambda x: '{}_{}'.format(datestring, str(x).zfill(3)), range(6))
+#------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def get_ozflux_site_list(master_file_path):
@@ -34,12 +85,6 @@ def get_ozflux_site_list(master_file_path):
     df.index = map(lambda x: '_'.join(x.split(' ')), df.Site)
     df.drop(header_list[0], axis = 1, inplace = True)
     return df
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
-def get_files_from_datestring(datestring):
-    
-    return map(lambda x: '{}_{}'.format(datestring, str(x).zfill(3)), range(6))
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -63,167 +108,67 @@ def list_opendap_dirs(url, ext = 'html'):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def check_file_dates(nc):
+def wget_constructor(server_file_ID):
+    """Build the complete wget string for retrieval"""
     
-    """Check which files have already been seen and written"""
-    
-    base_date_str = getattr(nc.variables['time'], 'units')
-    base_date = dt.datetime.strptime(' '.join(base_date_str.split(' ')[2:4]), 
-                                     '%Y-%m-%d %H:%M:%S')
-    hour = (nc.variables['time'][:].data * 24).astype(int)
-    hour_mod = hour / 6 * 6
-    hour_str = map(lambda x: x.zfill(3), np.mod(hour, 6).astype('str'))
-    date_list = map(lambda x: base_date + dt.timedelta(hours = x), hour_mod)
-    str_date_list = map(lambda x: dt.datetime.strftime(x, '%Y%m%d%H'), date_list)
-    return map(lambda x: '{0}_{1}'.format(x[0], x[1]), 
-               zip(str_date_list, hour_str))
+    server_dir = server_file_ID.split('_')[0]
+    server_target = os.path.join(prot + svr + b_pth + server_dir,
+                                'ACCESS-R_{}_surface.nc'.format(server_file_ID))
+    return '{0} {1} {2}'.format(wget_prefix, tmp_path, server_target)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-
 prot = 'http://'
 svr = 'opendap.bom.gov.au:8080'
 a_pth = '/thredds/dodsC/bmrc/access-r-fc/ops/surface/'
 b_pth = '/thredds/fileServer/bmrc/access-r-fc/ops/surface/'
 master_file_path = '/home/ian/Temp/site_master.xls'
 output_path = '/home/ian/Temp/access_nc'
-
-current_dirs = list_opendap_dirs(prot + svr + a_pth)
+if not os.path.exists(output_path): os.makedirs(output_path)
+delta = 0.165
+tmp_path = os.path.join(output_path, '.access.nc')
+wget_prefix = '/usr/bin/wget -nv -a Download.log -O'
 
 site_df = get_ozflux_site_list(master_file_path)
+server_dirs = list_opendap_dirs(prot + svr + a_pth)
+seen_file_dict = check_seen_files(site_df.index, server_dirs)
 
-delta = 0.165
-
-tmp_path = os.path.join(output_path, '.access.nc')
-wget = '/usr/bin/wget -nv -a Download.log -O'
-
-if not os.path.exists(output_path): os.makedirs(output_path)
-
-#for this_dir in [current_dirs[0]]:
-#    local_dir = os.path.join(output_path, this_dir[:6])
-#    if not os.path.exists(local_dir): os.makedirs(local_dir)        
-#    for i in range(6):
-#        server_fpath = os.path.join(prot + svr + b_pth + this_dir,
-#                                    'ACCESS-R_{0}_{1}_surface.nc'
-#                                    .format(this_dir, str(i).zfill(3)))
-#        cmd = '{0} {1} {2}'.format(wget, tmp_path, server_fpath)
-#        if spc(cmd, shell=True):
-#            print 'Error in command: ', cmd
-#            continue
-#        print 'Extracting data for date {} for site: '.format(this_dir)
-#        for site in site_df.index:
-#            print site,
-#            site_name = site.replace(' ', '_')
-#            existing_fname = os.path.join(local_dir, '{}.nc'.format(site_name))
-#            tmp_fname = os.path.join(local_dir, '.{}.nc'.format(site_name))
-#            lat = site_df.loc[site, 'Latitude']
-#            lon = site_df.loc[site, 'Longitude']
-#            lat_range = str(lat - delta) + ',' + str(lat + delta)
-#            lon_range = str(lon - delta) + ',' + str(lon + delta)
-#            ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
-#                    .format(lat_range, lon_range, tmp_path, tmp_fname))
-#            if spc(ncks, shell = True):
-#                print 'Error in command: ', ncks
-#            if not os.path.exists(existing_fname):
-#                os.rename(tmp_fname, existing_fname)
-#            else:
-#                ncrcat = (r'/usr/bin/ncrcat --rec_apn {0} {1}'
-#                          .format(os.path.join(local_dir, tmp_fname), 
-#                                  os.path.join(local_dir, existing_fname)))
-#                if spc(ncrcat, shell=True):
-#                    print 'Error in command: ', ncrcat
-#                os.remove(tmp_fname)
-#        os.remove(tmp_path)
-#        print   
-
-
-cols = []
-for x in current_dirs: cols += get_files_from_datestring(x)
-new_df = pd.DataFrame(index = cols, columns = site_df.index)
-for site in new_df.columns:
-    target = os.path.join(output_path, '201811', '{}.nc'.format(site))
-    nc = netCDF4.Dataset(target)
-    seen_files = check_file_dates(nc)
-    l = map(lambda x: x in seen_files, cols)
-    new_df[site] = l
-new_df = new_df.T
-
-#    for f in seen_files:
-#        new_df.loc[site, f] = True
+for server_dir in server_dirs[2:3]:
+    local_dir = os.path.join(output_path, server_dir[:6])
+    if not os.path.exists(local_dir): os.makedirs(local_dir)
+    server_file_list = get_files_from_datestring(server_dir)
+    for server_file_ID in server_file_list:
+        site_list = seen_file_dict[server_file_ID]
+        if len(site_list) == 0:
+            print 'Data already appended: skipping {}'.format(server_file_ID)
+            continue
+        cmd = wget_constructor(server_file_ID)
+        if spc(cmd, shell=True):
+            print 'Error in command: ', cmd
+            continue
+        print 'Extracting data for date {} for site: '.format(server_file_ID)
+        for site in site_list:
+            print site,
+            existing_fname = os.path.join(local_dir, '{}.nc'.format(site))
+            tmp_fname = os.path.join(local_dir, '.{}.nc'.format(site))
+            lat = site_df.loc[site, 'Latitude']
+            lon = site_df.loc[site, 'Longitude']
+            lat_range = str(lat - delta) + ',' + str(lat + delta)
+            lon_range = str(lon - delta) + ',' + str(lon + delta)
+            ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
+                    .format(lat_range, lon_range, tmp_path, tmp_fname))
+            if spc(ncks, shell = True):
+                print 'Error in command: ', ncks
+            if not os.path.exists(existing_fname):
+                os.rename(tmp_fname, existing_fname)
+            else:
+                ncrcat = (r'/usr/bin/ncrcat --rec_apn {0} {1}'
+                          .format(os.path.join(local_dir, tmp_fname), 
+                                  os.path.join(local_dir, existing_fname)))
+                if spc(ncrcat, shell=True):
+                    print 'Error in command: ', ncrcat
+                os.remove(tmp_fname)
+        os.remove(tmp_path)
+        print   
 
 print ' --- All done ---'
-
-
- 
-#l = 
-
-######
-
-#
-#prot = 'http://'
-#svr = 'opendap.bom.gov.au:8080'
-#pth = '/thredds/fileServer/bmrc/access-r-fc/ops/surface/'
-#
-#tmpfile = './temp/access.nc'
-#site_list = 'sites_list.txt'
-#
-## check if date is on command line - else default to yesterday
-#args = sys.argv[1:]
-#if len(args) < 1:
-#    yest = date.today() - timedelta(1)
-#    ymd = yest.strftime('%Y%m%d')
-#else:
-#    ymd = args[0]
-#
-##print ymd
-##exit(0)
-#
-##ymd = '20150514'
-#ym = ymd[:6]
-#hrs = ['00', '06', '12', '18']
-#pref = '/ACCESS-R_' 
-#suff = '_surface.nc'
-#
-#
-## create destination dir
-#if not os.path.exists(ym):
-#    print 'Creating dir: ', ym
-#    os.makedirs(ym)
-#
-## formulate wget command
-##wget = '/usr/bin/wget -nv -N -nH -np -a Download.log -P ' + ym + ' -0 ' + tmpfile + ' '
-#wget = '/usr/bin/wget -nv -a Download.log -O ' + tmpfile + ' '
-#
-## read in site lat/lon
-#with open(site_list, 'r') as fin:
-#    sites = list(fin)
-#
-######
-#for h in hrs:
-#    for t in range(7):
-#        access = pref + ymd + h + '_' + str(t).zfill(3) + suff
-#        cmd = wget + prot + svr + pth + ymd + h + access
-#        print cmd
-#        if spc(cmd, shell=True):
-#            print 'Error in command: ', cmd
-#        else:
-#            # extract data for the sites, then can throw away the tmpfile
-#        #if True:
-#            for sl in sites:
-#                sname, slat, slon = sl.split(',')
-#                sname = sname.replace(' ', '_')
-#                lat = float(slat)
-#                lon = float(slon.strip())
-#                #print sname, lat, lon
-#                ncks = '/usr/bin/ncks -d lat,' + str(lat - delta) + ',' + str(lat + delta)  + ' -d lon,' \
-#                     + str(lon - delta) + ',' + str(lon + delta)  + ' ' \
-#                     + tmpfile + ' ' + ym + '/' + sname + '_' + ymd + h + '_' + str(t).zfill(3) + '.nc'
-#                print ncks
-#                if spc(ncks, shell=True):
-#                    print 'Error in command: ', ncks
-#            # 
-#            os.remove(tmpfile)
-# 
-#
-#print ' --- All done ---'
-# 
