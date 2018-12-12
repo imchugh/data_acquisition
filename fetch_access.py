@@ -172,7 +172,7 @@ server_dirs = list_opendap_dirs(prot + svr + a_pth) #Get available opendap dirs
 seen_file_dict = check_seen_files(site_df.index, server_dirs) #Cross check data
 
 #For each six-hourly directory...
-for server_dir in server_dirs[0:2]: 
+for server_dir in server_dirs: 
 
     #Create local path for current month if doesn't exist (purge temp files if
     #present)
