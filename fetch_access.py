@@ -108,13 +108,53 @@ def list_opendap_dirs(url, ext = 'html'):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def wget_constructor(server_file_ID):
-    """Build the complete wget string for retrieval"""
+def ncks_exec(write_path, site_series, server_file_ID):
+    """Build the complete ncks string and retrieve site temp file"""
     
+    delta = 0.165
+    tmp_fname = os.path.join(write_path, '{0}_{1}.tmp'.format(site, server_file_ID))
+    access_fname = os.path.join('/'.join(write_path.split('/')[:-1]), 
+                                '.access.tmp')
+    lat_range = (str(site_series.Latitude - delta) + ',' + 
+                 str(site_series.Longitude + delta))
+    lon_range = (str(site_series.Latitude - delta) + ',' + 
+                 str(site_series.Longitude + delta))
+    ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
+            .format(lat_range, lon_range, access_fname, tmp_fname))
+    if spc(ncks, shell = True):
+        raise RuntimeError('Error in command: {}'.format(ncks))
+    return tmp_fname
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def ncrcat_exec(existing_fname, new_fname):
+    """Will alter this to use rec_apn if can resolve"""
+    
+    alt_fname = os.path.join(os.path.dirname(existing_fname), 
+                             '{}.tmp'.format(os.path.basename(existing_fname)))
+    os.rename(existing_fname, alt_fname)
+    ncrcat = (r'/usr/bin/ncrcat -O {0} {1} {2}'.format(alt_fname, new_fname, 
+                                                       existing_fname))
+    if spc(ncrcat, shell=True):
+        print 'Error in command: ', ncrcat
+    os.remove(alt_fname)
+    os.remove(new_fname)
+    return
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def wget_exec(write_path, server_file_ID):
+    """Build the complete wget string and retrieve temp file"""
+    
+    tmp_fname = os.path.join(write_path, '.access.tmp')
+    wget_prefix = '/usr/bin/wget -nv -a Download.log -O'
     server_dir = server_file_ID.split('_')[0]
-    server_target = os.path.join(prot + svr + b_pth + server_dir,
+    server_fname = os.path.join(prot + svr + b_pth + server_dir,
                                 'ACCESS-R_{}_surface.nc'.format(server_file_ID))
-    return '{0} {1} {2}'.format(wget_prefix, tmp_path, server_target)
+    cmd = '{0} {1} {2}'.format(wget_prefix, tmp_fname, server_fname)
+    if spc(cmd, shell=True):
+        raise RuntimeError('Error in command: {}'.format(cmd))
+    return
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -125,50 +165,72 @@ b_pth = '/thredds/fileServer/bmrc/access-r-fc/ops/surface/'
 master_file_path = '/home/ian/Temp/site_master.xls'
 output_path = '/home/ian/Temp/access_nc'
 if not os.path.exists(output_path): os.makedirs(output_path)
-delta = 0.165
-tmp_path = os.path.join(output_path, '.access.nc')
-wget_prefix = '/usr/bin/wget -nv -a Download.log -O'
 
-site_df = get_ozflux_site_list(master_file_path)
-server_dirs = list_opendap_dirs(prot + svr + a_pth)
-seen_file_dict = check_seen_files(site_df.index, server_dirs)
+# Do preliminary checks
+site_df = get_ozflux_site_list(master_file_path) #Get site list
+server_dirs = list_opendap_dirs(prot + svr + a_pth) #Get available opendap dirs
+seen_file_dict = check_seen_files(site_df.index, server_dirs) #Cross check data
 
-for server_dir in server_dirs[2:3]:
+#For each six-hourly directory...
+for server_dir in server_dirs[0:1]: 
+
+    #Create local path for current month if doesn't exist (purge temp files if
+    #present)
     local_dir = os.path.join(output_path, server_dir[:6])
     if not os.path.exists(local_dir): os.makedirs(local_dir)
+    ### Purge temp files here ###
+    
+    #For each hourly file in list of files in this directory...
     server_file_list = get_files_from_datestring(server_dir)
-    for server_file_ID in server_file_list:
+    for server_file_ID in server_file_list: 
+        
+        # Get the sites (if any) requiring data from this file (or next if not)
         site_list = seen_file_dict[server_file_ID]
         if len(site_list) == 0:
             print 'Data already appended: skipping {}'.format(server_file_ID)
             continue
-        cmd = wget_constructor(server_file_ID)
-        if spc(cmd, shell=True):
-            print 'Error in command: ', cmd
+        
+        #Write a temporary local access file (containing all Oz data for a 
+        #single time step) - continue if fails
+        try: 
+            wget_exec(output_path, server_file_ID)
+        except RuntimeError, e: 
+            print e
             continue
+        
+        #Iterate through sites
         print 'Extracting data for date {} for site: '.format(server_file_ID)
         for site in site_list:
             print site,
+            
+            #Extract site data from temporary local access file
+            try:
+                tmp_fname = ncks_exec(local_dir, site_df.loc[site], 
+                                      server_file_ID)
+            except RuntimeError, e:
+                print e
+                continue
+
+            #Check if there is an existing site file
             existing_fname = os.path.join(local_dir, '{}.nc'.format(site))
-            tmp_fname = os.path.join(local_dir, '.{}.nc'.format(site))
-            lat = site_df.loc[site, 'Latitude']
-            lon = site_df.loc[site, 'Longitude']
-            lat_range = str(lat - delta) + ',' + str(lat + delta)
-            lon_range = str(lon - delta) + ',' + str(lon + delta)
-            ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
-                    .format(lat_range, lon_range, tmp_path, tmp_fname))
-            if spc(ncks, shell = True):
-                print 'Error in command: ', ncks
             if not os.path.exists(existing_fname):
-                os.rename(tmp_fname, existing_fname)
+                os.rename(tmp_fname, existing_fname)        
             else:
-                ncrcat = (r'/usr/bin/ncrcat --rec_apn {0} {1}'
-                          .format(os.path.join(local_dir, tmp_fname), 
-                                  os.path.join(local_dir, existing_fname)))
-                if spc(ncrcat, shell=True):
-                    print 'Error in command: ', ncrcat
-                os.remove(tmp_fname)
-        os.remove(tmp_path)
+                ncrcat_exec(existing_fname, tmp_fname)
+
+#                alt_fname = os.path.join(os.path.dirname(existing_fname), 
+#                                         '_{}'.format(os.path.basename(existing_fname)))
+#                os.rename(existing_fname, alt_fname)
+#                ncrcat = (r'/usr/bin/ncrcat -O {0} {1} {2}'
+#                          .format(os.path.join(local_dir, tmp_fname), 
+#                                  os.path.join(local_dir, alt_fname),
+#                                  os.path.join(local_dir, existing_fname)))
+#                if spc(ncrcat, shell=True):
+#                    pdb.set_trace()
+#                    print 'Error in command: ', ncrcat
+#                os.remove(tmp_fname)
+#                os.remove(alt_fname)
+#        os.remove(tmp_path)
         print   
 
 print ' --- All done ---'
