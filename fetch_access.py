@@ -116,8 +116,8 @@ def ncks_exec(write_path, site_series, server_file_ID):
     access_fname = os.path.join('/'.join(write_path.split('/')[:-1]), 
                                 '.access.tmp')
     lat_range = (str(site_series.Latitude - delta) + ',' + 
-                 str(site_series.Longitude + delta))
-    lon_range = (str(site_series.Latitude - delta) + ',' + 
+                 str(site_series.Latitude + delta))
+    lon_range = (str(site_series.Longitude - delta) + ',' + 
                  str(site_series.Longitude + delta))
     ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
             .format(lat_range, lon_range, access_fname, tmp_fname))
@@ -172,7 +172,7 @@ server_dirs = list_opendap_dirs(prot + svr + a_pth) #Get available opendap dirs
 seen_file_dict = check_seen_files(site_df.index, server_dirs) #Cross check data
 
 #For each six-hourly directory...
-for server_dir in server_dirs[0:1]: 
+for server_dir in server_dirs[0:2]: 
 
     #Create local path for current month if doesn't exist (purge temp files if
     #present)
@@ -211,26 +211,14 @@ for server_dir in server_dirs[0:1]:
                 print e
                 continue
 
-            #Check if there is an existing site file
+            #Check if there is an existing site file; if not, rename 
+            #temporary file, otherwise append to the existing
             existing_fname = os.path.join(local_dir, '{}.nc'.format(site))
             if not os.path.exists(existing_fname):
                 os.rename(tmp_fname, existing_fname)        
             else:
                 ncrcat_exec(existing_fname, tmp_fname)
 
-#                alt_fname = os.path.join(os.path.dirname(existing_fname), 
-#                                         '_{}'.format(os.path.basename(existing_fname)))
-#                os.rename(existing_fname, alt_fname)
-#                ncrcat = (r'/usr/bin/ncrcat -O {0} {1} {2}'
-#                          .format(os.path.join(local_dir, tmp_fname), 
-#                                  os.path.join(local_dir, alt_fname),
-#                                  os.path.join(local_dir, existing_fname)))
-#                if spc(ncrcat, shell=True):
-#                    pdb.set_trace()
-#                    print 'Error in command: ', ncrcat
-#                os.remove(tmp_fname)
-#                os.remove(alt_fname)
-#        os.remove(tmp_path)
         print   
 
 print ' --- All done ---'
