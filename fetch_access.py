@@ -88,13 +88,14 @@ def get_ozflux_site_list(master_file_path):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def list_opendap_dirs(url, ext = 'html'):
+def list_opendap_dirs(url):
     """Scrape list of directories from opendap surface url"""
     
-    page = requests.get(url).text
+    full_url = url.format('dodsC')
+    page = requests.get(full_url).text
     soup = BeautifulSoup(page, 'html.parser')    
     dir_list = [url + '/' + node.get('href') for node in soup.find_all('a') 
-                if node.get('href').endswith(ext)]
+                if node.get('href').endswith('html')]
     new_list = []
     for path in dir_list:
         path_list = path.replace('//', '/').split('/')[1:]
@@ -128,7 +129,8 @@ def ncks_exec(write_path, site_series, server_file_ID):
 
 #------------------------------------------------------------------------------
 def ncrcat_exec(existing_fname, new_fname):
-    """Will alter this to use rec_apn if can resolve"""
+    """Will alter this to use rec_apn if can resolve - update: NCO issue,
+       developer expects resolution in 4.7.9 (January 2018)"""
     
     alt_fname = os.path.join(os.path.dirname(existing_fname), 
                              '{}.tmp'.format(os.path.basename(existing_fname)))
@@ -143,32 +145,34 @@ def ncrcat_exec(existing_fname, new_fname):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def wget_exec(write_path, server_file_ID):
+def wget_exec(read_path, write_path, server_file_ID):
     """Build the complete wget string and retrieve temp file"""
     
     tmp_fname = os.path.join(write_path, '.access.tmp')
     wget_prefix = '/usr/bin/wget -nv -a Download.log -O'
     server_dir = server_file_ID.split('_')[0]
-    server_fname = os.path.join(prot + svr + b_pth + server_dir,
+    full_read_path = read_path.format('fileServer') + server_dir
+    server_fname = os.path.join(full_read_path,
                                 'ACCESS-R_{}_surface.nc'.format(server_file_ID))
     cmd = '{0} {1} {2}'.format(wget_prefix, tmp_fname, server_fname)
     if spc(cmd, shell=True):
         raise RuntimeError('Error in command: {}'.format(cmd))
-    return
+    return tmp_fname
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-prot = 'http://'
-svr = 'opendap.bom.gov.au:8080'
-a_pth = '/thredds/dodsC/bmrc/access-r-fc/ops/surface/'
-b_pth = '/thredds/fileServer/bmrc/access-r-fc/ops/surface/'
+#prot = 'http://'
+#svr = 'opendap.bom.gov.au:8080'
+#pth = '/thredds/{}/bmrc/access-r-fc/ops/surface/'
+#Initialise    
+retrieval_path = 'http://opendap.bom.gov.au:8080/thredds/{}/bmrc/access-r-fc/ops/surface'
 master_file_path = '/home/ian/Temp/site_master.xls'
 output_path = '/home/ian/Temp/access_nc'
 if not os.path.exists(output_path): os.makedirs(output_path)
 
 # Do preliminary checks
 site_df = get_ozflux_site_list(master_file_path) #Get site list
-server_dirs = list_opendap_dirs(prot + svr + a_pth) #Get available opendap dirs
+server_dirs = list_opendap_dirs(retrieval_path) #Get available opendap dirs
 seen_file_dict = check_seen_files(site_df.index, server_dirs) #Cross check data
 
 #For each six-hourly directory...
@@ -178,7 +182,8 @@ for server_dir in server_dirs:
     #present)
     local_dir = os.path.join(output_path, server_dir[:6])
     if not os.path.exists(local_dir): os.makedirs(local_dir)
-    ### Purge temp files here ###
+    old_tmp_files = filter(lambda x: os.path.splitext(x)[1]=='tmp', os.listdir)
+    map(lambda x: os.remove(x), old_tmp_files)
     
     #For each hourly file in list of files in this directory...
     server_file_list = get_files_from_datestring(server_dir)
@@ -193,7 +198,9 @@ for server_dir in server_dirs:
         #Write a temporary local access file (containing all Oz data for a 
         #single time step) - continue if fails
         try: 
-            wget_exec(output_path, server_file_ID)
+            master_tmp_fname = wget_exec(read_path = retrieval_path, 
+                                         write_path = output_path, 
+                                         server_file_ID = server_file_ID)
         except RuntimeError, e: 
             print e
             continue
@@ -205,8 +212,9 @@ for server_dir in server_dirs:
             
             #Extract site data from temporary local access file
             try:
-                tmp_fname = ncks_exec(local_dir, site_df.loc[site], 
-                                      server_file_ID)
+                tmp_fname = ncks_exec(write_path = local_dir, 
+                                      site_series = site_df.loc[site], 
+                                      server_file_ID = server_file_ID)
             except RuntimeError, e:
                 print e
                 continue
@@ -219,6 +227,7 @@ for server_dir in server_dirs:
             else:
                 ncrcat_exec(existing_fname, tmp_fname)
 
+        os.remove(master_tmp_fname)
         print   
 
 print ' --- All done ---'
