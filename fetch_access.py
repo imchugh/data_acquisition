@@ -91,6 +91,7 @@ def get_ozflux_site_list(master_file_path):
 def list_opendap_dirs(url):
     """Scrape list of directories from opendap surface url"""
     
+#    pdb.set_trace()
     full_url = url.format('dodsC')
     page = requests.get(full_url).text
     soup = BeautifulSoup(page, 'html.parser')    
@@ -161,11 +162,8 @@ def wget_exec(read_path, write_path, server_file_ID):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-#prot = 'http://'
-#svr = 'opendap.bom.gov.au:8080'
-#pth = '/thredds/{}/bmrc/access-r-fc/ops/surface/'
 #Initialise    
-retrieval_path = 'http://opendap.bom.gov.au:8080/thredds/{}/bmrc/access-r-fc/ops/surface'
+retrieval_path = 'http://opendap.bom.gov.au:8080/thredds/{}/bmrc/access-r-fc/ops/surface/'
 master_file_path = '/home/ian/Temp/site_master.xls'
 output_path = '/home/ian/Temp/access_nc'
 if not os.path.exists(output_path): os.makedirs(output_path)
@@ -182,7 +180,8 @@ for server_dir in server_dirs:
     #present)
     local_dir = os.path.join(output_path, server_dir[:6])
     if not os.path.exists(local_dir): os.makedirs(local_dir)
-    old_tmp_files = filter(lambda x: os.path.splitext(x)[1]=='tmp', os.listdir)
+    old_tmp_files = filter(lambda x: os.path.splitext(x)[1]=='tmp', 
+                           os.listdir(local_dir))
     map(lambda x: os.remove(x), old_tmp_files)
     
     #For each hourly file in list of files in this directory...
