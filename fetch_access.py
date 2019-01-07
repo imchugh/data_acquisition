@@ -8,6 +8,7 @@ Created on Mon Nov 19 14:55:15 2018
 
 from bs4 import BeautifulSoup
 import datetime as dt
+from datetime import date, timedelta
 import netCDF4
 import numpy as np
 import os
@@ -59,6 +60,14 @@ def check_seen_files(site_list, server_dirs):
         l = list(new_df[new_df[site]==False].index)
         seen_file_dict[site] = l    
     return seen_file_dict
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_day_dirs():
+    
+    yest = date.today() - timedelta(1)
+    ymd = yest.strftime('%Y%m%d')
+    return map(lambda x: ymd + x, ['00', '06', '12', '18'])
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -170,7 +179,8 @@ if not os.path.exists(output_path): os.makedirs(output_path)
 
 # Do preliminary checks
 site_df = get_ozflux_site_list(master_file_path) #Get site list
-server_dirs = list_opendap_dirs(retrieval_path) #Get available opendap dirs
+server_dirs = get_day_dirs()
+#server_dirs = list_opendap_dirs(retrieval_path) #Get available opendap dirs
 seen_file_dict = check_seen_files(site_df.index, server_dirs) #Cross check data
 
 #For each six-hourly directory...
@@ -188,12 +198,6 @@ for server_dir in server_dirs:
     server_file_list = get_files_from_datestring(server_dir)
     for server_file_ID in server_file_list: 
         
-        # Get the sites (if any) requiring data from this file (or next if not)
-        site_list = seen_file_dict[server_file_ID]
-        if len(site_list) == 0:
-            print 'Data already appended: skipping {}'.format(server_file_ID)
-            continue
-        
         #Write a temporary local access file (containing all Oz data for a 
         #single time step) - continue if fails
         try: 
@@ -206,7 +210,7 @@ for server_dir in server_dirs:
         
         #Iterate through sites
         print 'Extracting data for date {} for site: '.format(server_file_ID)
-        for site in site_list:
+        for site in site_df.index:
             print site,
             
             #Extract site data from temporary local access file
