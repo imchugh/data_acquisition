@@ -190,7 +190,8 @@ def get_ozflux_site_list(master_file_path):
     df.index = map(lambda x: '_'.join(x.split(' ')), df.Site)
     df.drop(header_list[0], axis = 1, inplace = True)
     df['time_zone'] = map(lambda x: tzf().timezone_at(lat=x[0], lng=x[1]), 
-                          zip(df.Latitude.tolist(), df.Longitude.tolist()))    
+                          zip(df.Latitude.tolist(), df.Longitude.tolist()))
+        
     return df
 
 #------------------------------------------------------------------------------
