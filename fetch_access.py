@@ -198,6 +198,12 @@ for server_dir in server_dirs:
     server_file_list = get_files_from_datestring(server_dir)
     for server_file_ID in server_file_list: 
         
+        # Get the sites (if any) requiring data from this file (or next if not)
+        site_list = seen_file_dict[server_file_ID]
+        if len(site_list) == 0:
+            print 'Data already appended: skipping {}'.format(server_file_ID)
+            continue
+        
         #Write a temporary local access file (containing all Oz data for a 
         #single time step) - continue if fails
         try: 
@@ -210,7 +216,7 @@ for server_dir in server_dirs:
         
         #Iterate through sites
         print 'Extracting data for date {} for site: '.format(server_file_ID)
-        for site in site_df.index:
+        for site in site_list:
             print site,
             
             #Extract site data from temporary local access file
