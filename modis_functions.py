@@ -77,6 +77,7 @@ class modis_data(object):
         self.subset_width_km = subset_width_km
         self.site = site if site else 'Unknown'
         self.data = self._compile_data()
+        self.chunk_size = 8
     #-------------------------------------------------------------------------- 
 
     #--------------------------------------------------------------------------
@@ -186,7 +187,7 @@ class modis_data(object):
     #--------------------------------------------------------------------------
     
     #--------------------------------------------------------------------------
-    def _find_dates(self, n_per_chunk = 8):
+    def _find_dates(self):
         
         modis_date_list = get_date_list(self.latitude, self.longitude, 
                                         self.product)
@@ -203,8 +204,8 @@ class modis_data(object):
         if len(included_dates) == 0: raise RuntimeError('No data available '
                                                         'between requested '
                                                         'dates!')     
-        date_chunks = map(lambda i: included_dates[i: i + n_per_chunk], 
-                          range(0, len(included_dates), n_per_chunk))
+        date_chunks = map(lambda i: included_dates[i: i + self.chunk_size], 
+                          range(0, len(included_dates), self.chunk_size))
         return map(lambda x: (x[0], x[-1]), date_chunks)
     #--------------------------------------------------------------------------
         
@@ -432,6 +433,21 @@ def get_date_list(lat, lon, product):
     
     client = Client(wsdlurl)
     return client.service.getdates(lat, lon, product)
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_nominal_interval(product):
+    
+    dates = map(lambda x: dt.datetime.strptime(x[1:], '%Y%j'), 
+                get_date_list(0, 0, product))
+    df = pd.DataFrame({'dates': dates})
+    df['delta'] = df.dates - df.dates.shift()
+    intvl_list = filter(lambda x: ~np.isnan(x.days), list(set(df.delta)))
+    for intvl in intvl_list:
+        ct = df.loc[df.delta == intvl, 'delta'].count()
+        if ct / float(len(df)) > 0.6: 
+            return intvl.days
+    raise RuntimeError('Could not reliably ascertain interval in days!')
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
