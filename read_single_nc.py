@@ -37,6 +37,12 @@ class ACCESSData(object):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+def accumulate_rainfall(ds, label_suffix):
+    
+    pass
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def changeunits_airtemperature(ds, label_suffix):
     
     label = 'Ta' + label_suffix
@@ -259,20 +265,19 @@ def get_windspeedanddirection(ds, label_suffix):
 #------------------------------------------------------------------------------
 def interpolate_to_30minutes(ds_60minutes):
     ds_30minutes = pfp_io.DataStructure()
-    # copy the global attributes
+    # copy the global attributes to the 30 minutes ds and update time step 
     for this_attr in ds_60minutes.globalattributes.keys():
         ds_30minutes.globalattributes[this_attr] = ds_60minutes.globalattributes[this_attr]
-    # update the global attribute "time_step"
     ds_30minutes.globalattributes["time_step"] = 30
     # generate the 30 minute datetime series
-    dt_loc_60minutes = ds_60minutes.series["DateTime"]["Data"]
-    dt_loc_30minutes = [x for x in perdelta(dt_loc_60minutes[0],dt_loc_60minutes[-1],datetime.timedelta(minutes=30))]
-    pdb.set_trace()
-    nRecs_30minutes = len(dt_loc_30minutes)
-    dt_utc_60minutes = ds_60minutes.series["DateTime_UTC"]["Data"]
-    dt_utc_30minutes = [x for x in perdelta(dt_utc_60minutes[0],dt_utc_60minutes[-1],datetime.timedelta(minutes=30))]
+    dt_loc_30minutes = pd.date_range(ds_60minutes.series["DateTime"]["Data"][0],
+                                     ds_60minutes.series["DateTime"]["Data"][-1],
+                                     freq = '30T').to_pydatetime()
+    dt_utc_30minutes = pd.date_range(ds_60minutes.series["DateTime_UTC"]["Data"][0],
+                                     ds_60minutes.series["DateTime_UTC"]["Data"][-1],
+                                     freq = '30T').to_pydatetime()
     # update the global attribute "nc_nrecs"
-    ds_30minutes.globalattributes['nc_nrecs'] = nRecs_30minutes
+    ds_30minutes.globalattributes['nc_nrecs'] = len(dt_loc_30minutes)
     ds_30minutes.series["DateTime"] = {}
     ds_30minutes.series["DateTime"]["Data"] = dt_loc_30minutes
     flag = numpy.zeros(len(dt_loc_30minutes),dtype=numpy.int32)
@@ -501,13 +506,6 @@ def write_to_ds(f, info):
     
     return ds_60minutes
 #------------------------------------------------------------------------------
-
-def perdelta(start,end,delta):
-    curr = start
-    while curr <= end:
-        yield curr
-        curr += delta
-
 
 master_file_path = '/home/ian/Temp/site_master.xls'
 input_data_path = '/home/ian/Temp/access_nc/201901'
