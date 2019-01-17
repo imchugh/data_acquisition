@@ -36,6 +36,25 @@ def get_bands_to_process(product, drop_bands_dict):
         if not qc_band is None: bands.remove(qc_band)
     return bands
 #------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_date_chunks(date_list):
+
+    n_chunks = 8
+    intvl = mf.get_nominal_interval(product)
+    limit = intvl * n_chunks
+    count = 0
+    start_date = date_list[0]
+    pairs_list = []
+    for date in date_list:
+        delta_days = (date - start_date).days
+        if delta_days > limit:
+            pairs_list.append([start_date, prev_date])
+            start_date = date
+        prev_date = date
+    pairs_list.append([start_date, date])
+    return pairs_list
+#------------------------------------------------------------------------------
   
 #------------------------------------------------------------------------------
 def get_ozflux_site_list(master_file_path):
@@ -71,8 +90,10 @@ def read_from_existing_file(target_file_path):
 # Main program
 #------------------------------------------------------------------------------
 
-master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
-output_path = '/rdsi/market/MODIS'
+#master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
+#output_path = '/rdsi/market/MODIS'
+master_file_path = '/home/ian/Temp/site_master.xls'
+output_path = '/home/ian/Temp/MODIS'
 drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3',
                                'Land_Cover_Type_1_Secondary', 
                                'Land_Cover_Type_1_Secondary_Percent']}
@@ -84,6 +105,7 @@ site_df = get_ozflux_site_list(master_file_path)
 
 # Iterate over sites and check dir exists (make if not)
 for site in site_df.index:
+    print 'Starting processing for site: {}'.format(site)
     site_name = '_'.join(site.split(' '))
     site_dir_path = os.path.join(output_path, site_name)
     check_dir(site_dir_path)
@@ -91,7 +113,7 @@ for site in site_df.index:
     
     # Iterate over products and check dir exists (make if not) and get 
     # available dates
-    for product in product_list:
+    for product in ['MOD11A2']:#product_list:
         band_list = get_bands_to_process(product, drop_bands_dict)
         product_site_dir_path = os.path.join(site_dir_path, product)
         check_dir(product_site_dir_path)
@@ -100,20 +122,31 @@ for site in site_df.index:
                                       mf.get_date_list(lat, lon, product))
         
         # Iterate over bands    
-        for band in band_list:
+        for band in ['LST_Day_1km']:#band_list:
             file_name = '{0}_{1}_{2}.csv'.format(site_name, product, band)
             path_filename = os.path.join(product_site_dir_path, file_name)
             if os.path.isfile(path_filename):
                 df = read_from_existing_file(path_filename)
                 dates_to_retrieve = sorted(filter(lambda x: not x in df.index,
                                                   product_dates_available))
-                if not dates_to_retrieve: continue
-                x = mf.modis_data_by_npixel(lat, lon, product, band, 
-                                            start_date = dates_to_retrieve[0],
-                                            end_date = dates_to_retrieve[-1],
-                                            site = site)
+                if dates_to_retrieve: 
+                    date_str = (', ').join(map(lambda x: str(x), 
+                                           dates_to_retrieve))
+                    print ('The following dates will be appended: {}'
+                           .format(date_str))
+                else:
+                    print 'No new data to append... continuing'
+                    continue
+                date_chunks = get_date_chunks(dates_to_retrieve)
+                for chunk in date_chunks:
+                    x = mf.modis_data_by_npixel(lat, lon, product, band, 
+                                                start_date = chunk[0],
+                                                end_date = chunk[-1],
+                                                site = site)
+                    if x.valid_rows == 0: continue
+                    x.write_to_file(product_site_dir_path)
             else:
                 x = mf.modis_data_by_npixel(lat, lon, product, band, site = site)
-            if x.valid_rows == 0: continue
-            x.write_to_file(product_site_dir_path)
+                if x.valid_rows == 0: continue
+                x.write_to_file(product_site_dir_path)
 #------------------------------------------------------------------------------
