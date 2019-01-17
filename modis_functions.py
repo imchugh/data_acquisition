@@ -69,6 +69,7 @@ class modis_data(object):
         self.longitude = longitude
         self.product = product
         self.band = band
+        self.chunk_size = 8
         self.qc_band = get_qc_variable_band(product, band)
         self.qc_is_primary = self._check_if_qc_primary()
         self.start_date = start_date
@@ -77,7 +78,6 @@ class modis_data(object):
         self.subset_width_km = subset_width_km
         self.site = site if site else 'Unknown'
         self.data = self._compile_data()
-        self.chunk_size = 8
     #-------------------------------------------------------------------------- 
 
     #--------------------------------------------------------------------------
@@ -339,11 +339,15 @@ class modis_data(object):
         old_df = pd.read_csv(target_file_path, skiprows = range(i))
         old_df.index = map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), 
                            old_df.Date)
-        old_df.drop('Date', axis = 1, inplace = True)
-        all_df = pd.concat([old_df, df])
-        all_df.drop_duplicates(inplace = True)
-        all_df = all_df.loc[~all_df.index.duplicated(keep = 'last')]
+        new_df = df.copy()
+        new_df['Date'] = map(lambda x: dt.datetime.strftime(x, '%Y-%m-%d'), 
+                             new_df.index)
+        new_df = new_df[old_df.columns]
+        all_df = pd.concat([old_df, new_df])
         all_df.sort_index(inplace = True)
+        all_df.drop_duplicates(inplace = True)
+        all_df.drop('Date', axis = 1, inplace = True)
+        all_df = all_df.loc[~all_df.index.duplicated(keep = 'last')]
         with open(target_file_path, 'w') as f:
             for line in header_list:
                 f.write(line)
