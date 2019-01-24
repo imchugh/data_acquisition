@@ -483,16 +483,22 @@ def get_pixel_resolution(product):
 #------------------------------------------------------------------------------
 def get_product_web_page(product = None):
     
-    url_dict = {this_product: '{}_v006'.format(this_product.lower()) 
-                for this_product in get_product_list()} 
-    url_dict['MCD12Q1'] = 'mcd12q1'
-    url_dict['MCD12Q2'] = 'mcd12q2'
-    if not product:
-        addr = ('https://lpdaac.usgs.gov/dataset_discovery/modis/'
-                'modis_products_table')
+    products_list = get_product_list()
+    modis_url_dict = {prod: '{}_v006'.format(prod.lower()) 
+                      for prod in products_list if prod[0] == 'M'}
+    modis_url_dict['MCD12Q1'] = 'mcd12q1'
+    modis_url_dict['MCD12Q2'] = 'mcd12q2'
+    viirs_url_dict = {prod: '{}_v001'.format(prod.lower()) 
+                      for prod in products_list if prod[:3] == 'VNP'}
+    modis_url_dict.update(viirs_url_dict)
+    base_addr = ('https://lpdaac.usgs.gov/dataset_discovery/{0}/'
+                 '{0}_products_table')
+    if product is None or not product in products_list:
+        print 'Product not found... redirecting to data discovery page'
+        addr = ('https://lpdaac.usgs.gov/dataset_discovery')
     else:
-        addr = ('https://lpdaac.usgs.gov/dataset_discovery/modis/'
-                'modis_products_table/{}'.format(url_dict[product]))
+        fill_str = 'modis' if product[0] == 'M' else 'viirs'
+        addr = os.path.join(base_addr.format(fill_str), modis_url_dict[product])
     webbrowser.open(addr)
 #--------------------------------------------------------------------------
 
