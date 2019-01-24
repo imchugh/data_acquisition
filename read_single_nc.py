@@ -107,7 +107,7 @@ def do_unit_conversions(ds):
             get_radiation(ds, label_suffix)
             get_groundheatflux(ds, label_suffix) # as residual
             get_availableenergy(ds, label_suffix)
-            get_instantaneous_precip(ds, label_suffix)
+            get_regular_cuml_precip(ds, label_suffix)
 #------------------------------------------------------------------------------
     
 #------------------------------------------------------------------------------
@@ -165,24 +165,6 @@ def get_groundheatflux(ds, label_suffix):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_instantaneous_precip(ds, label_suffix):
-    
-    label = "Precip_" + label_suffix
-    hr_utc,f,a = pfp_utils.GetSeries(ds, 'Hr_UTC')
-    accum,flag,attr = pfp_utils.GetSeries(ds, label)
-    precip = numpy.ediff1d(accum, to_begin = 0) # get instantaneous precip
-    idx1 = numpy.where(numpy.mod(hr_utc, 6) == 0)[0] # resets at 6 hourly obs
-    precip[idx1] = accum[idx1]
-    idx2 = numpy.ma.where(precip < 0.01)[0]
-    precip[idx2] = float(0)
-    idx = numpy.where(flag!=0)[0]
-    precip[idx] = float(c.missing_value)
-    attr["long_name"] = "Precipitation total over time step"
-    attr["units"] = "mm/60 minutes"
-    pfp_utils.CreateSeries(ds, label, precip, Flag = flag, Attr = attr)
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
 def get_radiation(ds, label_suffix):
 
     label_Fn = "Fn" + label_suffix
@@ -217,6 +199,44 @@ def get_radiation(ds, label_suffix):
                                                               units = 'W/m2')
     pfp_utils.CreateSeries(ds, label_Fn, Fn, Flag = f, Attr = attr)
     return
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_regular_cuml_precip(ds, label_suffix):
+    
+    label = "Precip" + label_suffix
+    rain_access, flag, attr = pfp_utils.GetSeries(ds, label)
+    rain_inst = numpy.ediff1d(rain_access, to_begin = 0)
+    hr_utc = map(lambda x: x.hour, ds.series['DateTime_UTC']['Data'])
+    idx_obs = numpy.mod(hr_utc, 6) == 0
+    rain_inst_mod = numpy.ma.where(idx_obs, rain_access, rain_inst)
+    idx_flaginvalid = numpy.where(flag!=0)[0]
+    rain_inst_mod[idx_flaginvalid] = float(c.missing_value)
+    idx_imprecision = numpy.ma.where(rain_inst_mod < 0.01)[0]
+    rain_inst_mod[idx_imprecision] = float(0)
+    rain_accum = numpy.ma.cumsum(rain_inst_mod)
+    attr["long_name"] = "Precipitation total over time step"
+    attr["units"] = "mm/60 minutes"
+    pfp_utils.CreateSeries(ds, label, rain_accum, Flag = flag, Attr = attr)
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+#def get_regular_precip(ds, label_suffix):
+#    
+#    label = "Precip" + label_suffix
+#    rain_access, flag, attr = pfp_utils.GetSeries(ds, label)
+#    rain_inst = numpy.ediff1d(rain_access, to_begin = 0)
+#    hr_utc = map(lambda x: x.hour, ds.series['DateTime_UTC']['Data'])
+#    idx_obs = numpy.mod(hr_utc, 6) == 0
+#    rain_inst_mod = numpy.ma.where(idx_obs, rain_access, rain_inst)
+#    idx_flaginvalid = numpy.where(flag!=0)[0]
+#    rain_inst_mod[idx_flaginvalid] = float(c.missing_value)
+#    idx_imprecision = numpy.ma.where(rain_inst_mod < 0.01)[0]
+#    rain_inst_mod[idx_imprecision] = float(0)
+#    rain_accum = numpy.ma.cumsum(rain_inst_mod)
+#    attr["long_name"] = "Precipitation total over time step"
+#    attr["units"] = "mm/60 minutes"
+#    pfp_utils.CreateSeries(ds, label, rain_accum, Flag = flag, Attr = attr)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
