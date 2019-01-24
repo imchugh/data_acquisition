@@ -43,7 +43,6 @@ def get_date_chunks(date_list):
     n_chunks = 8
     intvl = mf.get_nominal_interval(product)
     limit = intvl * n_chunks
-    count = 0
     start_date = date_list[0]
     pairs_list = []
     for date in date_list:
@@ -98,9 +97,9 @@ drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3'
                                'Land_Cover_Type_1_Secondary', 
                                'Land_Cover_Type_1_Secondary_Percent']}
 
-product_list = ['MOD11A2', 'MYD11A2', 'MOD13Q1', 'MYD13Q1', 'MCD15A2H', 
-                'MOD15A2H', 'MYD15A2H', 'MCD15A3H', 'MOD16A2', 
-                'MOD17A2H', 'MYD17A2H', 'MOD17A3H', 'MYD17A3H']
+product_list = ['MOD09A1', 'MYD09A1', 'MOD11A2', 'MYD11A2', 'MOD13Q1', 
+                'MYD13Q1', 'MCD15A2H', 'MOD15A2H', 'MYD15A2H', 'MCD15A3H', 
+                'MOD16A2', 'MOD17A2H', 'MYD17A2H', 'MOD17A3H', 'MYD17A3H']
 site_df = get_ozflux_site_list(master_file_path)
 
 # Iterate over sites and check dir exists (make if not)
@@ -113,7 +112,7 @@ for site in site_df.index:
     
     # Iterate over products and check dir exists (make if not) and get 
     # available dates
-    for product in ['MOD11A2']:#product_list:
+    for product in ['MYD09A1']:#product_list:
         band_list = get_bands_to_process(product, drop_bands_dict)
         product_site_dir_path = os.path.join(site_dir_path, product)
         check_dir(product_site_dir_path)
@@ -122,7 +121,7 @@ for site in site_df.index:
                                       mf.get_date_list(lat, lon, product))
         
         # Iterate over bands    
-        for band in ['LST_Day_1km']:#band_list:
+        for band in ['sur_refl_b07']:#band_list:
             file_name = '{0}_{1}_{2}.csv'.format(site_name, product, band)
             path_filename = os.path.join(product_site_dir_path, file_name)
             if os.path.isfile(path_filename):
