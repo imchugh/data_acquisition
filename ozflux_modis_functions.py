@@ -92,7 +92,7 @@ def read_from_existing_file(target_file_path):
 #master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 #output_path = '/rdsi/market/MODIS'
 master_file_path = '/home/ian/Temp/site_master.xls'
-output_path = '/home/ian/Temp/MODIS'
+output_path = '/home/ian/Temp/MODIS6'
 drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3',
                                'Land_Cover_Type_1_Secondary', 
                                'Land_Cover_Type_1_Secondary_Percent']}
@@ -112,7 +112,7 @@ for site in site_df.index:
     
     # Iterate over products and check dir exists (make if not) and get 
     # available dates
-    for product in ['MYD09A1']:#product_list:
+    for product in ['MOD17A2H']:#product_list:
         band_list = get_bands_to_process(product, drop_bands_dict)
         product_site_dir_path = os.path.join(site_dir_path, product)
         check_dir(product_site_dir_path)
@@ -121,7 +121,7 @@ for site in site_df.index:
                                       mf.get_date_list(lat, lon, product))
         
         # Iterate over bands    
-        for band in ['sur_refl_b07']:#band_list:
+        for band in ['Gpp_500m']:#band_list:
             file_name = '{0}_{1}_{2}.csv'.format(site_name, product, band)
             path_filename = os.path.join(product_site_dir_path, file_name)
             if os.path.isfile(path_filename):
