@@ -442,15 +442,14 @@ def get_date_list(lat, lon, product):
 #------------------------------------------------------------------------------
 def get_nominal_interval(product):
     
-    dates = map(lambda x: dt.datetime.strptime(x[1:], '%Y%j'), 
-                get_date_list(0, 0, product))
-    df = pd.DataFrame({'dates': dates})
-    df['delta'] = df.dates - df.dates.shift()
-    intvl_list = filter(lambda x: ~np.isnan(x.days), list(set(df.delta)))
-    for intvl in intvl_list:
-        ct = df.loc[df.delta == intvl, 'delta'].count()
-        if ct / float(len(df)) > 0.6: 
-            return intvl.days
+    dates_arr = np.array(map(lambda x: dt.datetime.strptime(x[1:], '%Y%j'), 
+                         get_date_list(0, 0, product)))
+    arr = dates_arr - np.roll(dates_arr, 1)
+    unique, counts = np.unique(arr, return_counts = True)
+    idx = np.where(counts == counts.max())
+    interval_days = unique[idx].item().days
+    if counts.max() / float(len(dates_arr)) > 0.8:
+        return interval_days
     raise RuntimeError('Could not reliably ascertain interval in days!')
 #------------------------------------------------------------------------------
 

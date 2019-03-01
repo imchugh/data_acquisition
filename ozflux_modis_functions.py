@@ -89,10 +89,8 @@ def read_from_existing_file(target_file_path):
 # Main program
 #------------------------------------------------------------------------------
 
-#master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
-#output_path = '/rdsi/market/MODIS'
-master_file_path = '/home/ian/Temp/site_master.xls'
-output_path = '/home/ian/Temp/MODIS'
+master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
+output_path = '/rdsi/market/MODIS'
 drop_bands_dict = {'MCD12Q1': ['LC_Property_1', 'LC_Property_2', 'LC_Property_3',
                                'Land_Cover_Type_1_Secondary', 
                                'Land_Cover_Type_1_Secondary_Percent']}
@@ -121,7 +119,7 @@ for site in site_df.index:
                                       mf.get_date_list(lat, lon, product))
         
         # Iterate over bands    
-        for band in ['sur_refl_b07']:#band_list:
+        for band in band_list:
             file_name = '{0}_{1}_{2}.csv'.format(site_name, product, band)
             path_filename = os.path.join(product_site_dir_path, file_name)
             if os.path.isfile(path_filename):
@@ -131,8 +129,8 @@ for site in site_df.index:
                 if dates_to_retrieve: 
                     date_str = (', ').join(map(lambda x: str(x), 
                                            dates_to_retrieve))
-                    print ('The following dates will be appended: {}'
-                           .format(date_str))
+                    print ('The following dates will be appended to product '
+                           '{0}, band {1}: {2}'.format(product, band, date_str))
                 else:
                     print 'No new data to append... continuing'
                     continue
