@@ -12,7 +12,7 @@ import time
 import xlrd
 import xlwt
 # since the scripts directory is there, try importing the modules
-sys.path.append('/mnt/PyFluxPro/scripts')
+sys.path.append('/mnt/PyFluxPro_V0.2.0/scripts')
 # PFP
 import pfp_io
 import pfp_log
