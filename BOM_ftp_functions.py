@@ -7,14 +7,56 @@ Created on Tue May 15 16:08:18 2018
 """
 
 import ftplib
+import numpy as np
 import os
+import pandas as pd
+from pytz import timezone
 import StringIO
+from timezonefinder import TimezoneFinder as tzf
 import zipfile
 import pdb
+
+
 
 ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 search_str = 'AWS' # 'globalsolar'
+
+#------------------------------------------------------------------------------
+def get_station_dataframe():
+    
+    header_line = 2
+    space_line = 3
+    station_list = get_station_list()
+    length_list = [len(x) for x in station_list[space_line].split(' ')]
+    pos = np.cumsum([x + 1 for x in length_list])
+    end_pos = pos - 1
+    start_pos = np.concatenate([np.array([0]), pos[:-1]])
+    tuples = zip(start_pos, end_pos)
+    labels = [station_list[header_line][i[0]:i[1]].strip() for i in tuples]
+    d = {}
+    for i, label in enumerate(labels):
+        start, end = tuples[i][0], tuples[i][1]
+        d[label] = [stn[start:end].strip() for stn in station_list[4:-6]]
+    df = pd.DataFrame(d)
+    for col in df.columns:
+        if col == 'Site': continue
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except ValueError:
+            continue
+    tz = []
+    for i in df.index:
+        lat = df.loc[i, 'Lat']
+        lon = df.loc[i, 'Lon']
+        try:
+            tz.append(tzf().timezone_at(lng = lon, lat = lat))
+        except ValueError:
+            tz.append(np.nan)
+    df['timezone'] = tz
+    return df
+    
+#------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def get_station_list(file_name = 'stations.txt'):
@@ -24,11 +66,10 @@ def get_station_list(file_name = 'stations.txt'):
     ftp = ftplib.FTP(ftp_server)
     ftp.login('anonymous', 'guest')
     full_file_name = os.path.join(ftp_dir, file_name)
-    pdb.set_trace()
     if not full_file_name in ftp.nlst(ftp_dir): 
         print 'File not found!'
         return
-    f_str = 'RETR {0}'.format(os.path.join(ftp_dir, full_file_name))
+    f_str = 'RETR {0}'.format(full_file_name)
     sio = StringIO.StringIO()
     ftp.retrbinary(f_str, sio.write)
     ftp.close()
