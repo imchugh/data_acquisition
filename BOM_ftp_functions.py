@@ -11,6 +11,7 @@ import numpy as np
 import os
 import pandas as pd
 from pytz import timezone
+from string import maketrans
 import StringIO
 from timezonefinder import TimezoneFinder as tzf
 import zipfile
@@ -22,44 +23,89 @@ ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
 search_str = 'AWS' # 'globalsolar'
 
+
+local_dir = '/home/ian/Temp/BOM'
+
+##------------------------------------------------------------------------------
+#def compile_station_details():
+#    
+#    columns_list = ['record_id', 'station_id', 'rainfall_district_id', 
+#                    'station_name', 'month_year_opened', 'month_year_closed',
+#                    'lat', 'lon', 'coords_derivation', 'State', 
+#                    'height_stn_asl', 'height_barom_asl', 'wmo_id', 
+#                    'first_file_year', 'last_file_year', 'pct_complete',
+#                    'pct_vals_Y', 'pct_vals_N', 'pct_vals_W', 'pct_vals_S',
+#                    'pct_vals_I', 'eor']
+#    station_files_dir = os.path.join(local_dir, 'Station_lists')
+#    file_list = [os.path.join(station_files_dir, x) for x in 
+#                 os.listdir(station_files_dir)]
+#    df_list = []
+#    for this_file in file_list:
+#        df = pd.read_csv(this_file, header = None)
+#        df.columns = columns_list
+#        df_list.append(df)
+#    master_df = pd.concat(df_list)
+#    master_df = master_df[columns_list[1:13]]
+#    master_df.index = map(lambda x: x.zfill(6), 
+#                          master_df.station_id.astype('str'))
+#    master_df.drop('station_id', axis = 1, inplace = True)
+#    master_df.sort_index(inplace = True)
+#    master_df = master_df[~master_df.index.duplicated(keep = 'first')]
+#    tz = []
+#    for ID in master_df.index:
+#        lat = master_df.loc[ID, 'lat']
+#        lon = master_df.loc[ID, 'lon']
+#        tz.append(tzf().timezone_at(lng = lon, lat = lat))
+#    master_df['timezone'] = tz
+#    return master_df
+##------------------------------------------------------------------------------
+
 #------------------------------------------------------------------------------
-def get_station_dataframe():
+def get_local_station_files(notes_data):
     
-    header_line = 2
-    space_line = 3
-    station_list = get_station_list()
-    length_list = [len(x) for x in station_list[space_line].split(' ')]
+    start_line = 207
+    end_line = 228
+    byte_start = []
+    byte_length = []
+    desc = []
+    for i, line in enumerate(notes_data):
+        if i < start_line or i > end_line: continue
+        line_list = [x.strip() for x in line.split(',')]
+        byte_start.append(int(line_list[0].split('-')[0]))
+        byte_length.append(int(line_list[1]))
+        desc.append(line_list[2].rstrip()) 
+    return pd.DataFrame({'Byte_start_location': byte_start,
+                         'Byte_length': byte_length,
+                         'Explanation': desc})
+#------------------------------------------------------------------------------
+    
+#------------------------------------------------------------------------------
+def _get_station_list_dataframe(station_list):
+    
+    """Returns a dataframe from passed list, using simplified names"""
+    
+    ref_dict = {'AWS_end': 'End', 'AWS_start': 'Start', 'Bar. Ht': 'Bar_ht', 
+                'Co-ord Source': 'Source', 'Site name': 'Site_name',
+                'STA': 'Sta', 'Long': 'Lon', 'AeroHt': 'Aero_ht'}
+    
+    length_list = [len(x) for x in station_list[1].rstrip('\r\n').split()]
     pos = np.cumsum([x + 1 for x in length_list])
     end_pos = pos - 1
     start_pos = np.concatenate([np.array([0]), pos[:-1]])
     tuples = zip(start_pos, end_pos)
-    labels = [station_list[header_line][i[0]:i[1]].strip() for i in tuples]
+    labels = [station_list[0][i[0]:i[1]].strip() for i in tuples]
+    new_labels = [ref_dict[label] if label in ref_dict else label for label in labels]
     d = {}
-    for i, label in enumerate(labels):
+    for i, label in enumerate(new_labels):
         start, end = tuples[i][0], tuples[i][1]
         d[label] = [stn[start:end].strip() for stn in station_list[4:-6]]
-    df = pd.DataFrame(d)
-    for col in df.columns:
-        if col == 'Site': continue
-        try:
-            df[col] = pd.to_numeric(df[col])
-        except ValueError:
-            continue
-    tz = []
-    for i in df.index:
-        lat = df.loc[i, 'Lat']
-        lon = df.loc[i, 'Lon']
-        try:
-            tz.append(tzf().timezone_at(lng = lon, lat = lat))
-        except ValueError:
-            tz.append(np.nan)
-    df['timezone'] = tz
-    return df
-    
+    return pd.DataFrame(d)   
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_station_list(file_name = 'stations.txt'):
+def get_station_list(file_name = 'stations.txt', as_dataframe = False):
+    
+    """Gets contents of stations.txt file on BOM permanent ftp server"""
     
     ftp_server = 'ftp.bom.gov.au'
     ftp_dir = 'anon2/home/ncc/metadata/sitelists/'
@@ -74,12 +120,58 @@ def get_station_list(file_name = 'stations.txt'):
     ftp.retrbinary(f_str, sio.write)
     ftp.close()
     sio.seek(0)
-    return sio.readlines()
+    data_list = sio.readlines()
+    header_list = []
+    for i, line in enumerate(data_list[:10]):
+        try: l = line.split()[0]
+        except IndexError: continue
+        if l == 'Site':
+            header_list.append(line)
+            break
+    new_list = header_list + data_list[i + 1:]
+    if not as_dataframe: return new_list
+    return _get_station_list_dataframe(new_list)
 #------------------------------------------------------------------------------
+
+##------------------------------------------------------------------------------
+#def get_combined_station_list():
+#    
+#    """Like get_station_list, but instead of using only stations.txt, uses all 
+#       available files in the ftp directory to construct a dataframe"""
+#    
+#    file_list = get_station_list_files()
+#    df_list = []
+#    for f in file_list:
+#        print f
+#        df_list.append(get_station_list(f, as_dataframe=True))
+#    df = pd.concat(df_list, sort=True)
+#    df.drop_duplicates('Site', inplace = True)
+#    df.index = df.Site
+#    df.drop('Site', axis = 1, inplace = True)
+#    df.sort_index()
+#    return df
+##------------------------------------------------------------------------------
+#
+##------------------------------------------------------------------------------
+#def get_station_list_files():
+#    
+#    """Gets a list of all available sitelist files on the BOM permanent ftp 
+#       server"""
+#    
+#    ftp_server = 'ftp.bom.gov.au'
+#    ftp_dir = 'anon2/home/ncc/metadata/sitelists/'
+#    ftp = ftplib.FTP(ftp_server)
+#    ftp.login('anonymous', 'guest')
+#    f_list = [f for f in ftp.nlst(ftp_dir) if '.txt' in f]
+#    return [f.split('/')[-1] for f in f_list if not ' ' in f]
+##------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def get_file_list():
 
+    """Gets a list of all of the available files on the  OzFlux-specific ftp
+       server with the AWS sites"""
+    
     ftp = ftplib.FTP(ftp_server)
     ftp.login()    
     zf_list = ftp.nlst(ftp_dir)
@@ -97,31 +189,6 @@ def get_file_list():
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def check_list_integrity(id_list):
-    
-    return_list = []
-    if id_list:
-        if not isinstance(id_list, list):
-            raise TypeError('id_list argument must be a list!')
-        for item in id_list:
-            if not isinstance(item, (int, str)):
-                raise TypeError('each item in list must be either integer or '
-                                'string representation thereof! You passed {} '
-                                'in list'.format(type(item)))
-            if isinstance(item, int): return_list.append(str(item).zfill(6))
-            if isinstance(item, str):
-                int(item)
-                try:
-                    assert len(item) <= 6
-                except AssertionError:
-                    raise RuntimeError('BOM station IDs have no more than six '
-                                       'numbers! You passed {} in list'
-                                       .format(type(item)))
-                return_list.append(item.zfill(6))
-        return return_list
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
 def subset_station_list(files_list, target_ID_list):
     
     unq_files_list = sorted(list(set([f for f in files_list if 'Data' in f])))
@@ -135,10 +202,95 @@ def subset_station_list(files_list, target_ID_list):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def get_ftp_data(id_list = None):
+def get_station_details_format(truncate_description = True):
 
-    # Check valid list was passed
-    id_list = check_list_integrity(id_list)
+    simple_list = ['record_id', 'station_id', 'rainfall_district_id', 
+                    'station_name', 'month_year_opened', 'month_year_closed',
+                    'lat', 'lon', 'coords_derivation', 'State', 
+                    'height_stn_asl', 'height_barom_asl', 'wmo_id', 
+                    'first_file_year', 'last_file_year', 'pct_complete',
+                    'pct_vals_Y', 'pct_vals_N', 'pct_vals_W', 'pct_vals_S',
+                    'pct_vals_I', 'eor']
+    start_line = 207
+    end_line = 229    
+    zf = _get_ftp_data(search_list = ['Notes'])
+    with zf.open(zf.namelist()[0]) as file_obj:
+        notes_list = file_obj.readlines()
+    byte_start = ['Byte_start']
+    byte_length = ['Byte_length']
+    desc = ['Description']
+    if truncate_description: desc += simple_list
+    for line in notes_list[start_line:end_line]:
+        line_list = [x.strip() for x in line.split(',')]
+        byte_start.append(int(line_list[0].split('-')[0]))
+        byte_length.append(int(line_list[1]))
+        if not truncate_description: desc.append(line_list[2].rstrip())
+    return pd.DataFrame({byte_start[0]: byte_start[1:],
+                         byte_length[0]: byte_length[1:],
+                         desc[0]: desc[1:]})
+#------------------------------------------------------------------------------    
+
+#------------------------------------------------------------------------------
+def get_line_spacing():
+
+    zf = _get_ftp_data(search_list = ['Notes'])
+    with zf.open(zf.namelist()[0]) as file_obj:
+        notes_list = file_obj.readlines()
+    trantab = maketrans('','')
+    bad_chars = '*_-.'
+    start_line = 19
+    end_line = 44    
+    byte_start = ['Byte_start']
+    byte_length = ['Byte_length']
+    desc = ['Description']
+    for i, line in enumerate(notes_list[start_line:end_line]):
+        line_list = [x.strip() for x in line.split(',')]
+        byte_start.append(int(line_list[0].split('-')[0]))
+        byte_length.append(int(line_list[1]))
+        if i > 1: line_list[2] = line_list[2].translate(trantab, bad_chars)
+        if len(line_list) > 2: line_list[2] = ','.join(line_list[2:])
+        desc.append(line_list[2].rstrip('.'))
+    return pd.DataFrame({byte_start[0]: byte_start[1:],
+                         byte_length[0]: byte_length[1:],
+                         desc[0]: desc[1:]})
+#------------------------------------------------------------------------------        
+
+#------------------------------------------------------------------------------
+def get_station_details_AWS():
+    """Retrieves a dataframe containing details of all AWS stations on the 
+       OzFlux ftp server site"""
+       
+    zf = _get_ftp_data(['StnDet'], get_first = False)
+    data_list = []
+    for f in zf.namelist():
+        with zf.open(f) as file_obj:
+            for line in file_obj:
+                data_list += [line.split(',')]
+    notes_df = get_station_details_format()
+    df = pd.DataFrame(data_list, columns = notes_df.Description)
+    for col in [x for x in df.columns if not 'station_id' in x]:
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except ValueError:
+            continue
+    df.index = df['station_id']
+    return df.sort_index()
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def _get_ftp_data(search_list = None, get_first = True):
+    """Function to retrieve zipfile containing data files for AWS stations 
+       on OzFlux ftp server site
+       Args: 
+           * search_list (list or None, default None): specifies substrings 
+             used to search for matching file names (if None returns all data 
+             available)
+           * get_first (boolean, default True): if true, returns only the first
+             file with matching substring"""
+    
+    if search_list:
+        if not isinstance(search_list, list):
+            raise TypeError('argument search_list must be of type list!')
     
     # Login to ftp server      
     ftp = ftplib.FTP(ftp_server)
@@ -157,10 +309,22 @@ def get_ftp_data(id_list = None):
         ftp.retrbinary(f_str, sio.write)
         sio.seek(0)
         zf = zipfile.ZipFile(sio)
-        file_list = subset_station_list(zf.namelist(), id_list)
+        if not search_list is None:
+            file_list = []
+            for this_str in search_list:
+                if not isinstance(this_str, str):
+                    raise TypeError('search_list elements must be of type str!')
+                for f in zf.namelist(): 
+                    if this_str in f:
+                        file_list.append(f)
+                        if get_first: search_list.remove(this_str)
+        else:
+            file_list = zf.namelist()
         for f in file_list:
-            master_zf.writestr(f, zf.read(f))
+            if not f in master_zf.namelist():
+                master_zf.writestr(f, zf.read(f))
         zf.close()
+        if not search_list is None and len(search_list) == 0: break
     ftp.close()
 
     return master_zf
