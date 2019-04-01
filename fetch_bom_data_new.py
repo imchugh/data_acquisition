@@ -192,7 +192,7 @@ def zipfile_to_dataframe(file_obj, station_df):
 #------------------------------------------------------------------------------
 
 # Set path to read existing and write new data
-write_path = '/home/ian/Temp/BOM/Test/'
+write_path = '/home/ian/Temp/BOM/Active/'
 
 # Get the station details for automatic AWS from FTP site
 stations_df = bomftp.get_station_details_AWS()
@@ -230,7 +230,7 @@ for station_id in stations_df.index:
     
     # Print details to screen
     print 'Processing site {0} ({1})'.format(station_id, 
-                                             station_df['station_name'])
+                                             station_df['station_name'].rstrip())
     
     # Get all the data from the ftp file and make a dataframe
     readf_name = id_dict[station_id]
