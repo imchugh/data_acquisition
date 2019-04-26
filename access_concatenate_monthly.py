@@ -15,7 +15,8 @@ import xlwt
 sys.path.append('/mnt/PyFluxPro_V0.2.0/scripts')
 # PFP
 import pfp_io
-import pfp_log
+#import pfp_log
+import logging
 
 #------------------------------------------------------------------------------
 # Functions                                                                   #
@@ -67,7 +68,8 @@ access_base_path = "/rdsi/market/access_opendap/monthly"
 t = time.localtime()
 rundatetime = datetime.datetime(t[0],t[1],t[2],t[3],t[4],t[5]).strftime("%Y%m%d%H%M")
 log_filename = 'access_concatenate_'+rundatetime+'.log'
-logger = pfp_log.init_logger(logger_name="pfp_log", file_handler=log_filename)
+#logger = pfp_log.init_logger(logger_name="pfp_log", file_handler=log_filename)
+logger = logging.getLogger("pfp_log")
 
 # Check for new months of data
 logger.info("Getting a list of months available for concatenation")
