@@ -192,7 +192,7 @@ def zipfile_to_dataframe(file_obj, station_df):
 #------------------------------------------------------------------------------
 
 # Set path to read existing and write new data
-write_path = '/home/ian/Temp/BOM/Active/'
+write_path = '/rdsi/market/CloudStor/Shared/AWS_BOM_all'
 
 # Get the station details for automatic AWS from FTP site
 stations_df = bomftp.get_station_details_AWS()
