@@ -87,6 +87,20 @@ def get_header_list():
             'Quality of station level pressure',
             'AWS Flag',
             '#\r\n']
+
+#def test():
+#    data = bomftp.get_data_file_formatting()
+#    headers = data.Description.tolist()
+#    new_headers = headers[:2] + headers[3:9] + headers[11:]
+#    new_headers[0] = 'hm'
+#    new_headers[1] = 'Station Number'
+#    new_headers[12] = new_headers[12].replace('km/h', 'm/s')
+#    new_headers[14] += ' true'
+#    new_headers[16] = new_headers[16].replace('km/h', 'm/s')
+#    new_headers[-2] = new_headers[-2].replace('Automatic Weather Station', 'AWS')
+#    new_headers[-1] = '#\r\n'
+#    return new_headers
+
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -116,8 +130,8 @@ def make_request(lat, lon):
     if json_obj.status_code == 200:
         return json.loads(json_obj.content)
     else: 
-        raise RuntimeError('Request returned status {}'
-                           .format(json_obj.status_code))
+        print ('Timezone request returned status code {}'
+               .format(json_obj.status_code))
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -195,7 +209,7 @@ def zipfile_to_dataframe(file_obj, station_df):
 write_path = '/rdsi/market/CloudStor/Shared/AWS_BOM_all'
 
 # Get the station details for automatic AWS from FTP site
-stations_df = bomftp.get_station_details_AWS()
+stations_df = bomftp.get_aws_station_details()
 
 # Create a timezone variable using lookup from python package
 stations_df['timezone'] = [tzf().timezone_at(lng = stations_df.loc[x, 'lon'], 
@@ -206,11 +220,12 @@ stations_df['timezone'] = [tzf().timezone_at(lng = stations_df.loc[x, 'lon'],
 # unsuccessful tz lookup will have only empty data appended to the local date
 # and time slots of the text file)
 for id_code in stations_df[pd.isnull(stations_df.timezone)].index:
-    rq = make_request(stations_df.loc[id_code, 'lat'], stations_df.loc[id_code, 'lon'])
+    rq = make_request(stations_df.loc[id_code, 'lat'], 
+                      stations_df.loc[id_code, 'lon'])
     stations_df.loc[id_code, 'timezone'] = rq['zoneName']
 
 # Get line spacing of existing files for subsequent formatting
-format_df = bomftp.get_line_spacing()
+format_df = bomftp.get_data_file_formatting()
 
 # Get a zipfile containing most recent ftp data
 z_file = bomftp._get_ftp_data()
