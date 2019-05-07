@@ -52,7 +52,11 @@ fi
 # 4) Write new rainfall record to existing file
 ncks -O -d time,0,5 new_precip_inst.nc trunc_precip_inst.nc
 ncks -A -v inst_prcp trunc_precip_inst.nc temp012345.nc
-mv temp012345.nc ../Monthly_files/"$SITE"_"$DATETIME".nc
+
+# 5) Rename file
+NEW_NAME="$SITE"_"$DATETIME".nc
+echo New name $NEW_NAME
+#mv temp012345.nc "$SITE"_"$DATETIME".nc
 
 # 5) Cut out the rainfall file to be prepended to future dataset (at hour 00, 06, 12 or 18)
 NEW_DATETIME=$(date -d "${DATETIME:0:8} ${DATETIME:8:2} +6 hour" '+%Y%m%d%H')
@@ -61,5 +65,22 @@ ncks -O -d time,5 precip_inst.nc forecast_precip.nc
 NEW_STRING='days since '$(date -d "${DATETIME:0:8} ${DATETIME:8:2} +6 hour" '+%F %H')':0:0'
 ncap2 -O -s 'time=array(0.0,1,$time)' -s "time@units=\"$NEW_STRING\"" forecast_precip.nc "$NEXT_RAIN_FILE"
 
+# 6) Write the data to the existing file if exists, else rename in monthly directory
+YEARMONTH="${DATETIME:0:6}"
+if [ ! -d Monthly_files/$YEARMONTH ]
+then
+    echo "No monthly directory available... created!"
+    mkdir ../Monthly_files/$YEARMONTH
+fi
+
+MONTHLY_FILE=../Monthly_files/$YEARMONTH/$SITE.nc
+if [ ! -f $MONTHLY_FILE ]
+then
+    mv temp012345.nc $MONTHLY_FILE
+else
+    echo 'Hello World!'
+    # Here do the ncrcat to append to existing file
+fi
+# 
 # 6) Remove all working files
 rm -r *
