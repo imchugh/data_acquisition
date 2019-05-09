@@ -127,9 +127,9 @@ for this_dir in dirs_list[1:2]:
 #    
     file_list = get_files_from_datestring(this_dir)    
     
-#    for f in file_list:
-#    
-#        wget_exec(retrieval_path, continental_file_path, f)
+    for f in file_list:
+    
+        wget_exec(retrieval_path, continental_file_path, f)
         
     for site in site_df.index[0:1]:
         
