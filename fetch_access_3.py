@@ -14,18 +14,8 @@ import xlrd
 import pdb
 
 #------------------------------------------------------------------------------
-def nco_exec(site_name, date_directory, latitude, longitude):
-
-    exec_string = ('./test.sh "{0}" "{1}" "{2}" "{3}"'
-                   .format(site_name, date_directory, latitude, longitude))    
-    if spc(exec_string, shell = True):
-        raise RuntimeError('Error in command: {}'.format(exec_string))
-    return
-#------------------------------------------------------------------------------
-
-#------------------------------------------------------------------------------
 def get_day_dirs():
-    
+                    
     yest = date.today() - timedelta(1)
     ymd = yest.strftime('%Y%m%d')
     return map(lambda x: ymd + x, ['00', '06', '12', '18'])
@@ -59,26 +49,29 @@ def get_ozflux_site_list(master_file_path):
     return df
 #------------------------------------------------------------------------------
 
-##------------------------------------------------------------------------------
-#def ncks_exec(read_path, write_path, site_details, server_file_ID):
-#    
-#    """Build the complete ncks string and retrieve site temp file"""
-#    
-#    delta = 0.165
-#    access_fname = os.path.join(read_path, 
-#                                '{}_access.tmp'.format(server_file_ID))
-#    tmp_fname = os.path.join(write_path, '{0}_{1}.tmp'.format(site, 
-#                                                              server_file_ID))
-#    lat_range = (str(site_details.Latitude - delta) + ',' + 
-#                 str(site_details.Latitude + delta))
-#    lon_range = (str(site_details.Longitude - delta) + ',' + 
-#                 str(site_details.Longitude + delta))
-#    ncks = ('/usr/bin/ncks -d lat,{0} -d lon,{1} {2} {3}'
-#            .format(lat_range, lon_range, access_fname, tmp_fname))
-#    if spc(ncks, shell = True):
-#        raise RuntimeError('Error in command: {}'.format(ncks))
-#    return tmp_fname
-##------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+def nco_exec(site_name, date_directory, latitude, longitude):
+
+    """Call the shell script that cuts out the site coordinates and 
+       concatenates with existing data (using NCO)"""
+    
+    exec_string = ('./test.sh "{0}" "{1}" "{2}" "{3}"'
+                   .format(site_name, date_directory, latitude, longitude))    
+    if spc(exec_string, shell = True):
+        raise RuntimeError('Error in command: {}'.format(exec_string))
+    return
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def purge_dir(directory, file_ext = '.tmp'):
+    
+    """Dump any files not required"""
+    
+    f_list = filter(lambda x: os.path.splitext(x)[1] == '.tmp', 
+                    os.listdir(directory))
+    for f in [os.path.join(directory, x) for x in f_list]:
+        os.remove(f)
+#------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def wget_exec(read_path, write_path, server_file_ID):
@@ -111,41 +104,30 @@ master_file_path = '/home/ian/Temp/site_master.xls'
 # MAIN PROGRAM
 #------------------------------------------------------------------------------
 
-site_df = get_ozflux_site_list(master_file_path) #Get site list
+site_df = get_ozflux_site_list(master_file_path)
 dirs_list = get_day_dirs()
 continental_file_path = os.path.join(output_path, 'Continental_files')
 
-for this_dir in dirs_list[1:2]:
+# Pre-purge the continental file path for all temp files
+purge_dir(continental_file_path)
+
+# For each six-hour directory...
+for this_dir in dirs_list:
     
-    #Create local path for current month if doesn't exist (purge temp files if
-    #present)
-#    local_dir = os.path.join(output_path, this_dir[:6])
-#    if not os.path.exists(local_dir): os.makedirs(local_dir)
-#    old_tmp_files = filter(lambda x: os.path.splitext(x)[1]=='tmp', 
-#                           os.listdir(local_dir))
-#    map(lambda x: os.remove(x), old_tmp_files)
-#    
-    file_list = get_files_from_datestring(this_dir)    
-    
-    for f in file_list:
-    
+    # Get a list of the files we want to extract (UTC + 0-7)
+    file_list = get_files_from_datestring(this_dir)
+
+    # Grab the continent-wide file        
+    for f in file_list:    
         wget_exec(retrieval_path, continental_file_path, f)
+    
+    # Cut out site from continent-wide file and append (see shell script)    
+    for site in site_df.index:
         
-    for site in site_df.index[0:1]:
-        
-        #Extract site data from temporary local access file
-        
-#        for f in file_list:
         try:
             site_details = site_df.loc[site]
             nco_exec(site_details.name, this_dir, site_details.Latitude,
                      site_details.Longitude)
-#                tmp_fname = ncks_exec(read_path = continental_file_path,
-#                                      write_path = local_dir, 
-#                                      site_details = site_df.loc[site], 
-#                                      server_file_ID = f)
         except RuntimeError, e:
             print e
             continue
-        
-        
