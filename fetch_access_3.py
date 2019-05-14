@@ -55,7 +55,7 @@ def nco_exec(site_name, date_directory, latitude, longitude):
     """Call the shell script that cuts out the site coordinates and 
        concatenates with existing data (using NCO)"""
     
-    exec_string = ('./test.sh "{0}" "{1}" "{2}" "{3}"'
+    exec_string = ('./nco_shell.sh "{0}" "{1}" "{2}" "{3}"'
                    .format(site_name, date_directory, latitude, longitude))    
     if spc(exec_string, shell = True):
         raise RuntimeError('Error in command: {}'.format(exec_string))
