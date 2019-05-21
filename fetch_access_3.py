@@ -6,20 +6,60 @@ Created on Tue Jan 29 10:19:53 2019
 @author: ian
 """
 
-from datetime import date, timedelta
+from bs4 import BeautifulSoup
+from datetime import date, datetime, timedelta
+import netCDF4
+import numpy as np
 import os
 import pandas as pd
+import requests
 from subprocess import call as spc
 import xlrd
 import pdb
 
 #------------------------------------------------------------------------------
-def get_day_dirs():
-                    
-    yest = date.today() - timedelta(1)
-    ymd = yest.strftime('%Y%m%d')
-    return map(lambda x: ymd + x, ['00', '06', '12', '18'])
+def check_seen_files(opendap_url, base_dir, site_list):
+    
+    """Check local files to see which of the available files on the opendap 
+       server have been seen and processed"""
+    
+    opendap_files = _list_opendap_dirs(opendap_url)
+    local_path = os.path.join(base_dir, 'Monthly_files')
+    data = (np.tile(False, len(opendap_files) * len(site_list))
+            .reshape(len(opendap_files), len(site_list)))
+    seen_df = pd.DataFrame(data, index = opendap_files, columns = site_list)
+    if os.listdir(local_path):
+        last_dir = os.path.join(local_path, sorted(os.listdir(local_path))[-1])
+        for site in seen_df.columns:
+            seen_dirs = []
+            target = os.path.join(last_dir, '{}.nc'.format(site))
+            try:
+                nc = netCDF4.Dataset(target)
+            except IOError:
+                continue
+            dts = sorted(netCDF4.num2date(nc.variables['time'][:], 
+                         units = nc.variables['time'].units))
+            seen_dates = [datetime.strftime(x, '%Y%m%d') for x in dts]
+            seen_hours = [str(x.hour - x.hour % 6).zfill(2) for x in dts]
+            seen_dirs = list(set([x[0] + x[1] for x in zip(seen_dates, 
+                                                           seen_hours)]))
+            seen_df[site] = map(lambda x: x in seen_dirs, opendap_files)
+    seen_df = seen_df.T
+    seen_dict = {}
+    for site in seen_df.columns:
+        l = list(seen_df[seen_df[site]==False].index)
+        if l:
+            seen_dict[site] = l    
+    return seen_dict
 #------------------------------------------------------------------------------
+
+##------------------------------------------------------------------------------
+#def get_day_dirs():
+#                    
+#    yest = date.today() - timedelta(1)
+#    ymd = yest.strftime('%Y%m%d')
+#    return map(lambda x: ymd + x, ['00', '06', '12', '18'])
+##------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def get_files_from_datestring(datestring):
@@ -47,6 +87,28 @@ def get_ozflux_site_list(master_file_path):
     df.index = map(lambda x: '_'.join(x.split(' ')), df.Site)
     df.drop(header_list[0], axis = 1, inplace = True)
     return df
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def _list_opendap_dirs(url):
+    
+    """Scrape list of directories from opendap surface url"""
+    
+    full_url = url.format('dodsC')
+    page = requests.get(full_url).text
+    soup = BeautifulSoup(page, 'html.parser')    
+    dir_list = [url + '/' + node.get('href') for node in soup.find_all('a') 
+                if node.get('href').endswith('html')]
+    new_list = []
+    for path in dir_list:
+        path_list = path.replace('//', '/').split('/')[1:]
+        try:
+            path_list.remove('catalog.html')
+            datetime.strptime(path_list[-1], '%Y%m%d%H')
+            new_list.append(path_list[-1])
+        except: 
+            continue
+    return new_list
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -97,37 +159,47 @@ def wget_exec(read_path, write_path, server_file_ID):
 #------------------------------------------------------------------------------
 
 retrieval_path = 'http://opendap.bom.gov.au:8080/thredds/{}/bmrc/access-r-fc/ops/surface/'
-output_path = '/home/ian/Desktop/access'
+base_dir = '/home/ian/Desktop/access'
 master_file_path = '/home/ian/Temp/site_master.xls'
 
 #------------------------------------------------------------------------------
 # MAIN PROGRAM
 #------------------------------------------------------------------------------
 
+# Get site details
 site_df = get_ozflux_site_list(master_file_path)
-dirs_list = get_day_dirs()
-continental_file_path = os.path.join(output_path, 'Continental_files')
+
+# Set the path for continental file retrieval
+continental_file_path = os.path.join(base_dir, 'Continental_files')
+
+# Cross check available files on the opendap server against content of existing
+# files 
+files_dict = check_seen_files(retrieval_path, base_dir, site_df.index)
 
 # Pre-purge the continental file path for all temp files
 purge_dir(continental_file_path)
 
 # For each six-hour directory...
-for this_dir in dirs_list:
+for this_dir in sorted(files_dict.keys()):
     
     # Get a list of the files we want to extract (UTC + 0-7)
     file_list = get_files_from_datestring(this_dir)
+
+    # Get a list of the sites we need to collect data for
+    sites_list = sorted(files_dict[this_dir])
 
     # Grab the continent-wide file        
     for f in file_list:    
         wget_exec(retrieval_path, continental_file_path, f)
     
-    # Cut out site from continent-wide file and append (see shell script)    
+    # Cut out site from continent-wide file and append 
+    # (see shell script nco_shell.sh)    
     for site in site_df.index:
         
         try:
             site_details = site_df.loc[site]
             nco_exec(site_details.name, this_dir, site_details.Latitude,
-                     site_details.Longitude)
+                     site_details.Longitude)            
         except RuntimeError, e:
             print e
             continue
