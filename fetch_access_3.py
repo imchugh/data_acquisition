@@ -159,8 +159,8 @@ def wget_exec(read_path, write_path, server_file_ID):
 #------------------------------------------------------------------------------
 
 retrieval_path = 'http://opendap.bom.gov.au:8080/thredds/{}/bmrc/access-r-fc/ops/surface/'
-base_dir = '/home/ian/Desktop/access'
-master_file_path = '/home/ian/Temp/site_master.xls'
+base_dir = '/rdsi/market/access_test'
+master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 
 #------------------------------------------------------------------------------
 # MAIN PROGRAM
@@ -176,7 +176,7 @@ continental_file_path = os.path.join(base_dir, 'Continental_files')
 # files 
 files_dict = check_seen_files(retrieval_path, base_dir, site_df.index)
 
-# Pre-purge the continental file path for all temp files
+## Pre-purge the continental file path for all temp files
 purge_dir(continental_file_path)
 
 # For each six-hour directory...
