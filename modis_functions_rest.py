@@ -8,10 +8,12 @@ Created on Tue Jan 16 14:38:30 2018
 from collections import OrderedDict
 import datetime as dt
 import json
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
 from scipy import interpolate, signal
+import webbrowser
 import xarray as xr
 
 import pdb
@@ -112,12 +114,50 @@ class modis_data_network(object):
         if not site_ID in get_network_list(network_name, include_details = False):
             raise KeyError('Site ID code not found! Check available site ID '
                            'codes using get_network_list(network)'.format(product))
+        
         self.site_attrs = get_network_list(network_name)[site_ID]
-        self.data_array = request_subset_by_siteid(product, site_ID, band,
-                                                   start_date, end_date, 
-                                                   network_name, 
+        if start_date is None or end_date is None:
+            dates = get_product_dates(product, 
+                                      self.site_attrs['latitude'],
+                                      self.site_attrs['longitude'])
+        if start_date is None: 
+            start_date = modis_to_from_pydatetime(dates[0]['modis_date'])
+        if end_date is None: 
+            end_date = modis_to_from_pydatetime(dates[-1]['modis_date'])
+        self.data_array = request_subset_by_siteid(product, band, network_name,
+                                                   site_ID, start_date, end_date, 
                                                    filtered = filtered)
     #--------------------------------------------------------------------------
+    def plot_data(self, pixel_num = 'center', smooth = True):
+        
+        data = get_pixel_subset(self.data_array, 3)
+        df = interp_and_filter(data)
+        fig, ax = plt.subplots(1, 1, figsize = (14, 8))
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.tick_params(axis = 'y', labelsize = 14)
+        ax.tick_params(axis = 'x', labelsize = 14)
+        ax.set_xlabel('Date', fontsize = 14)
+        ax.set_ylabel(self.data_array.attrs['band'], fontsize = 14)
+        ax.plot(df.index, df.data_interp, lw = 0.5)
+        ax.plot(df.index, df.data_smooth, lw = 2)
+    #--------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def _error_codes(json_obj):
+    
+    d = {400: 'Invalid band for product',
+         404: 'Product not found'}
+    
+    status_code = json_obj.status_code
+    if status_code == 200: return
+    try: 
+        error = d[status_code]
+    except KeyError:
+        error = 'Unknown error code ({})'.format(str(status_code))
+    raise RuntimeError('retrieval failed - {}'.format(error))
+#------------------------------------------------------------------------------
+
 
 #------------------------------------------------------------------------------    
 def get_band_list(product, include_details = True):
@@ -138,18 +178,9 @@ def _get_chunks(l, n = 10):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def _error_codes(json_obj):
+def _get_default_dates(product, band, start = True):
     
-    d = {400: 'Invalid band for product',
-         404: 'Product not found'}
-    
-    status_code = json_obj.status_code
-    if status_code == 200: return
-    try: 
-        error = d[status_code]
-    except KeyError:
-        error = 'Unknown error code ({})'.format(str(status_code))
-    raise RuntimeError('retrieval failed - {}'.format(error))
+    return
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -173,6 +204,24 @@ def get_product_list(include_details = True):
                         products_list))
     if include_details: return d
     return d.keys()
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_product_web_page(product = None):
+    
+    products_list = get_product_list()
+    modis_url_dict = {prod: '{}v006'.format(prod.lower()) for prod in 
+                      products_list if prod[0] == 'M'}
+    viirs_url_dict = {prod: '{}v001'.format(prod.lower()) 
+                      for prod in products_list if prod[:3] == 'VNP'}
+    modis_url_dict.update(viirs_url_dict)
+    base_addr = ('https://lpdaac.usgs.gov/products/{0}')
+    if product is None or not product in modis_url_dict.keys():
+        print 'Product not found... redirecting to data discovery page'
+        addr = ('https://lpdaac.usgs.gov')
+    else:
+        addr = base_addr.format(modis_url_dict[product])
+    webbrowser.open(addr)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -270,8 +319,8 @@ def request_subset_by_coords(prod, lat, lng, band, start_date, end_date,
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def request_subset_by_siteid(prod, siteid, band, start_date, end_date, 
-                             network = 'OZFLUX', filtered = False):
+def request_subset_by_siteid(prod, band, network, siteid, start_date, end_date, 
+                             filtered = False):
     
     """Get the data from ORNL DAAC by network and site id"""
     
@@ -289,6 +338,8 @@ def request_subset_by_siteid(prod, siteid, band, start_date, end_date,
 
 #------------------------------------------------------------------------------
 def get_pixel_subset(x_arr, pixels_per_side = 3):
+    
+    """Create a subset of a larger dataset"""
     
     try:
         assert x_arr.nrows == x_arr.ncols
@@ -319,12 +370,16 @@ def get_pixel_subset(x_arr, pixels_per_side = 3):
 #------------------------------------------------------------------------------
     
 #------------------------------------------------------------------------------
-def interp_and_filter(x_arr):
+def interp_and_filter(x_arr, n_points = 11, poly_order = 3):
     
+    """Interpolate (Akima) and smooth (Savitzky-Golay) the signal of x_arr"""
+    
+    # Currently requires some fudging of the data at the start because the 
+    # MODIS opendap server is delivering wrong data!
     pd_time = pd.to_datetime(x_arr.time.data[0:len(x_arr.time.data):2])
     n_days = np.array((pd_time - pd_time[0]).days)
     str_data = x_arr.data[1,1,:]
-    str_data = str_data[0:len(str_data):2] # Currently required because the MODIS opendap server is delivering wrong data  
+    str_data = str_data[0:len(str_data):2] 
     data = []
     for x in str_data:
         try:
@@ -332,23 +387,12 @@ def interp_and_filter(x_arr):
         except ValueError:
             data.append(np.nan)    
     data = np.array(data)
-    valid_idx = np.where(~np.isnan(data))
-    
-#    f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])
-#    interp_series = f(n_days)
-#    smooth_series = signal.savgol_filter(interp_series, 9, 3, mode = "mirror")
-#    df = pd.DataFrame({'data': data, 'data_interp': interp_series,
-#                       'data_smooth': smooth_series}, index = pd_time.date)
-#    return df
-    
-    f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])    
-    all_days = np.arange(n_days[0], n_days[-1] + 1)
-    interp_series = f(all_days)
-    df = pd.DataFrame({'data': data}, index = pd_time.date)
-    new_index = pd.date_range(df.index[0], df.index[-1])
-    df = df.reindex(new_index)
-    df['data_interp'] = interp_series
-    df['data_smoothed'] = signal.savgol_filter(interp_series, 31, 3, 
-                                               mode = "mirror")
+    valid_idx = np.where(~np.isnan(data))    
+    f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])
+    interp_series = f(n_days)
+    smooth_series = signal.savgol_filter(interp_series, n_points, poly_order, 
+                                         mode = "mirror")
+    df = pd.DataFrame({'data': data, 'data_interp': interp_series,
+                       'data_smooth': smooth_series}, index = pd_time.date)
     return df
 #------------------------------------------------------------------------------
