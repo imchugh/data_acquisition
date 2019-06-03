@@ -24,15 +24,15 @@ def check_seen_files(opendap_url, base_dir, site_list):
        server have been seen and processed"""
     
     opendap_files = _list_opendap_dirs(opendap_url)
-    local_path = os.path.join(base_dir, 'Monthly_files')
+    month_dirs = np.unique([x[:6] for x in opendap_files]).astype(str)
+    check_paths = [os.path.join(base_dir, 'Monthly_files', x) for x in month_dirs]
     data = (np.tile(False, len(opendap_files) * len(site_list))
             .reshape(len(opendap_files), len(site_list)))
     seen_df = pd.DataFrame(data, index = opendap_files, columns = site_list)
-    if os.listdir(local_path):
-        last_dir = os.path.join(local_path, sorted(os.listdir(local_path))[-1])
-        for site in seen_df.columns:
-            seen_dirs = []
-            target = os.path.join(last_dir, '{}.nc'.format(site))
+    for site in seen_df.columns:
+        seen_dirs = []
+        for target_path in check_paths:
+            target = os.path.join(target_path, '{}.nc'.format(site))
             try:
                 nc = netCDF4.Dataset(target)
             except IOError:
@@ -41,9 +41,9 @@ def check_seen_files(opendap_url, base_dir, site_list):
                          units = nc.variables['time'].units))
             seen_dates = [datetime.strftime(x, '%Y%m%d') for x in dts]
             seen_hours = [str(x.hour - x.hour % 6).zfill(2) for x in dts]
-            seen_dirs = list(set([x[0] + x[1] for x in zip(seen_dates, 
-                                                           seen_hours)]))
-            seen_df[site] = map(lambda x: x in seen_dirs, opendap_files)
+            seen_dirs += list(set([x[0] + x[1] for x in zip(seen_dates, 
+                                                            seen_hours)]))
+        seen_df[site] = map(lambda x: x in seen_dirs, opendap_files)
     seen_df = seen_df.T
     seen_dict = {}
     for site in seen_df.columns:
@@ -52,14 +52,6 @@ def check_seen_files(opendap_url, base_dir, site_list):
             seen_dict[site] = l    
     return seen_dict
 #------------------------------------------------------------------------------
-
-##------------------------------------------------------------------------------
-#def get_day_dirs():
-#                    
-#    yest = date.today() - timedelta(1)
-#    ymd = yest.strftime('%Y%m%d')
-#    return map(lambda x: ymd + x, ['00', '06', '12', '18'])
-##------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
 def get_files_from_datestring(datestring):
@@ -152,8 +144,6 @@ def wget_exec(read_path, write_path, server_file_ID):
     return tmp_fname
 #------------------------------------------------------------------------------
 
-
-
 #------------------------------------------------------------------------------
 # USER PATH CONFIGURATIONS
 #------------------------------------------------------------------------------
@@ -176,12 +166,12 @@ continental_file_path = os.path.join(base_dir, 'Continental_files')
 # files 
 files_dict = check_seen_files(retrieval_path, base_dir, site_df.index)
 
-## Pre-purge the continental file path for all temp files
+# Pre-purge the continental file path for all temp files
 purge_dir(continental_file_path)
 
 # For each six-hour directory...
 for this_dir in sorted(files_dict.keys()):
-    
+
     # Get a list of the files we want to extract (UTC + 0-7)
     file_list = get_files_from_datestring(this_dir)
 
