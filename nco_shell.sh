@@ -62,11 +62,6 @@ fi
 ncks -O -d time,0,5 new_precip_inst.nc trunc_precip_inst.nc
 ncks -A -v inst_prcp trunc_precip_inst.nc temp012345.nc
 
-# 5) Rename file
-#NEW_NAME="$SITE"_"$DATETIME".nc
-#echo New name $NEW_NAME
-#mv temp012345.nc "$SITE"_"$DATETIME".nc
-
 # 5) Cut out the rainfall file to be prepended to future dataset (at hour 00, 06, 12 or 18)
 NEW_DATETIME=$(date -d "${DATETIME:0:8} ${DATETIME:8:2} +6 hour" '+%Y%m%d%H')
 NEXT_RAIN_FILE="$BASE_DIR"/Precip_forecast_files/"$SITE"_"$NEW_DATETIME"_precip.nc
