@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 import pandas as pd
 import requests
 from scipy import interpolate, signal
@@ -100,22 +101,25 @@ class modis_data_network(object):
             * cellsize (attribute): actual width of pixel in m
     '''
     def __init__(self, product, band, network_name, site_ID,  
-                 start_date = None, end_date = None, filtered = False):
+                 start_date = None, end_date = None, qcfiltered = False):
 
         if not product in get_product_list(include_details = False):
             raise KeyError('Product not available from web service! Check '
                            'available products list using get_product_list()')
-        if not band in get_band_list(product):
+        try:
+            self.band_attrs = get_band_list(product)[band]
+        except KeyError:
             raise KeyError('Band not available for {}! Check available bands '
                            'list using get_band_list(product)'.format(product))
         if not network_name in get_network_list():
             raise KeyError('Network not available from web service! Check '
                            'available networks list using get_network_list()')
-        if not site_ID in get_network_list(network_name, include_details = False):
+        try:
+            self.site_attrs = get_network_list(network_name)[site_ID]
+        except KeyError:
             raise KeyError('Site ID code not found! Check available site ID '
                            'codes using get_network_list(network)'.format(product))
         
-        self.site_attrs = get_network_list(network_name)[site_ID]
         if start_date is None or end_date is None:
             dates = get_product_dates(product, 
                                       self.site_attrs['latitude'],
@@ -126,22 +130,62 @@ class modis_data_network(object):
             end_date = modis_to_from_pydatetime(dates[-1]['modis_date'])
         self.data_array = request_subset_by_siteid(product, band, network_name,
                                                    site_ID, start_date, end_date, 
-                                                   filtered = filtered)
+                                                   qcfiltered = qcfiltered)
     #--------------------------------------------------------------------------
-    def plot_data(self, pixel_num = 'center', smooth = True):
+
+    #--------------------------------------------------------------------------
+    def plot_data(self, pixel_num = 'centre', smooth = True):
         
-        data = get_pixel_subset(self.data_array, 3)
-        df = interp_and_filter(data)
+        df = self.interp_and_filter(pixel_num = pixel_num)
         fig, ax = plt.subplots(1, 1, figsize = (14, 8))
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
         ax.tick_params(axis = 'y', labelsize = 14)
         ax.tick_params(axis = 'x', labelsize = 14)
         ax.set_xlabel('Date', fontsize = 14)
-        ax.set_ylabel(self.data_array.attrs['band'], fontsize = 14)
+        y_label = '{0} ({1})'.format(self.data_array.attrs['band'],
+                                     self.band_attrs['units'])
+        ax.set_ylabel(y_label, fontsize = 14)
         ax.plot(df.index, df.data_interp, lw = 0.5)
-        ax.plot(df.index, df.data_smooth, lw = 2)
+        if smooth:
+            ax.plot(df.index, df.data_smooth, lw = 2)
     #--------------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------
+    def interp_and_filter(self, n_points = 11, poly_order = 3, 
+                          pixel_num = 'centre'):
+        
+        """Interpolate (Akima) and smooth (Savitzky-Golay) signal"""
+        
+        nrows = self.data_array.attrs['nrows']
+        ncols = self.data_array.attrs['ncols']
+        data_mtx = np.arange(nrows * ncols).reshape(nrows, ncols)
+        if not pixel_num == 'centre':
+            if not isinstance(pixel_num, int): 
+                raise TypeError('"pixel_num" kwarg must be of type integer')
+            loc = np.where(data_mtx == pixel_num)
+        else:
+            loc = np.where(data_mtx == nrows * ncols / 2)
+        pd_time = pd.to_datetime(self.data_array.time.data)
+        n_days = np.array((pd_time - pd_time[0]).days)
+        data = self.data_array.data[loc[0], loc[1], :].flatten()
+        valid_idx = np.where(~np.isnan(data))    
+        f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])
+        interp_series = f(n_days)
+        smooth_series = signal.savgol_filter(interp_series, n_points, poly_order, 
+                                             mode = "mirror")
+        df = pd.DataFrame({'data': data, 'data_interp': interp_series,
+                           'data_smooth': smooth_series}, index = pd_time.date)
+        return df
+    #--------------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------
+    def write_to_nc(self, write_directory):
+
+        full_path = os.path.join(write_directory, 
+                                 self.site_attrs['network_sitename'])
+        self.data_array.to_netcdf(full_path)
+    #--------------------------------------------------------------------------        
 
 #------------------------------------------------------------------------------
 def _error_codes(json_obj):
@@ -209,6 +253,8 @@ def get_product_list(include_details = True):
 #------------------------------------------------------------------------------
 def get_product_web_page(product = None):
     
+    """Go to web page for product"""
+    
     products_list = get_product_list()
     modis_url_dict = {prod: '{}v006'.format(prod.lower()) for prod in 
                       products_list if prod[0] == 'M'}
@@ -253,20 +299,25 @@ def modis_to_from_pydatetime(date):
 #------------------------------------------------------------------------------
     
 #------------------------------------------------------------------------------
-def _process_data(data):
+def _process_data(data, band):
     
     """Process the raw data into a more human-intelligible format (xarray)"""
 
-    try:
-        meta = {key:value for key,value in data[0].items() if key != "subset" }
-    except AttributeError:
-        pdb.set_trace()
+    meta = {key:value for key,value in data[0].items() if key != "subset" }
+    meta['band'] = band
     data_dict = {'dates': [], 'arrays': [], 'metadata': meta}
     for i in data:
         for j in i['subset']:
-            data_dict['dates'].append(j['calendar_date'])
-            data_dict['arrays'].append(np.array(j['data']).reshape(meta['nrows'], 
-                                                                   meta['ncols']))        
+            if j['band'] == band:
+                data_dict['dates'].append(j['calendar_date'])
+                data = []
+                for x in j['data']:
+                    try:
+                        data.append(float(x))
+                    except ValueError:
+                        data.append(np.nan)  
+                data_dict['arrays'].append(np.array(data).reshape(meta['nrows'], 
+                                                                  meta['ncols']))        
     dtdates = [dt.datetime.strptime(d,"%Y-%m-%d") for d in data_dict['dates']]
     xcoordinates = ([float(meta['xllcorner'])] + 
                     [i * meta['cellsize'] + float(meta['xllcorner']) 
@@ -274,7 +325,7 @@ def _process_data(data):
     ycoordinates = ([float(meta['yllcorner'])] + 
                      [i * meta['cellsize'] + float(meta['yllcorner'])
                       for i in range(1, meta['nrows'])])
-    return xr.DataArray(name = meta['band'],
+    return xr.DataArray(name = band,
                         data = np.flipud(np.dstack(data_dict['arrays'])),
                         coords = [np.array(ycoordinates), 
                                   np.array(xcoordinates), dtdates],
@@ -320,20 +371,20 @@ def request_subset_by_coords(prod, lat, lng, band, start_date, end_date,
 
 #------------------------------------------------------------------------------
 def request_subset_by_siteid(prod, band, network, siteid, start_date, end_date, 
-                             filtered = False):
+                             qcfiltered = False):
     
     """Get the data from ORNL DAAC by network and site id"""
     
     modis_start = modis_to_from_pydatetime(start_date)
     modis_end = modis_to_from_pydatetime(end_date)
-    subset_str = '/subsetFiltered?' if filtered else '/subset?'
+    subset_str = '/subsetFiltered?' if qcfiltered else '/subset?'
     url_str = (''.join([api_base_url, prod, '/', network, '/', siteid, 
                         subset_str, band, '&startDate=', modis_start,
                         '&endDate=', modis_end]))
     header = {'Accept': 'application/json'}
     response = requests.get(url_str, headers = header)
     subset = (json.loads(response.text))
-    return _process_data([subset])
+    return _process_data([subset], band)
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -367,32 +418,4 @@ def get_pixel_subset(x_arr, pixels_per_side = 3):
                         coords = [new_y, new_x, x_arr.time],
                         dims = [ "y", "x", "time" ],
                         attrs = attrs_dict)
-#------------------------------------------------------------------------------
-    
-#------------------------------------------------------------------------------
-def interp_and_filter(x_arr, n_points = 11, poly_order = 3):
-    
-    """Interpolate (Akima) and smooth (Savitzky-Golay) the signal of x_arr"""
-    
-    # Currently requires some fudging of the data at the start because the 
-    # MODIS opendap server is delivering wrong data!
-    pd_time = pd.to_datetime(x_arr.time.data[0:len(x_arr.time.data):2])
-    n_days = np.array((pd_time - pd_time[0]).days)
-    str_data = x_arr.data[1,1,:]
-    str_data = str_data[0:len(str_data):2] 
-    data = []
-    for x in str_data:
-        try:
-            data.append(float(x))
-        except ValueError:
-            data.append(np.nan)    
-    data = np.array(data)
-    valid_idx = np.where(~np.isnan(data))    
-    f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])
-    interp_series = f(n_days)
-    smooth_series = signal.savgol_filter(interp_series, n_points, poly_order, 
-                                         mode = "mirror")
-    df = pd.DataFrame({'data': data, 'data_interp': interp_series,
-                       'data_smooth': smooth_series}, index = pd_time.date)
-    return df
 #------------------------------------------------------------------------------
