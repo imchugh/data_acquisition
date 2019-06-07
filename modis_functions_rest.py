@@ -134,9 +134,52 @@ class modis_data_network(object):
     #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------
-    def plot_data(self, pixel_num = 'centre', smooth = True):
+    def get_mean(self, smooth = True):
         
-        df = self.interp_and_filter(pixel_num = pixel_num)
+        # Need to do a 2D interpolation to get rid of NaNs
+        if smooth:
+            return self.interp_and_smooth(pixel = 'mean')    
+        return self.data_array.mean(['x', 'y'])
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
+    def interp_and_smooth(self, n_points = 11, poly_order = 3, 
+                          pixel = 'centre'):
+        
+        """Interpolate (Akima) and smooth (Savitzky-Golay) signal"""
+        
+        nrows = self.data_array.attrs['nrows']
+        ncols = self.data_array.attrs['ncols']
+        data_mtx = np.arange(nrows * ncols).reshape(nrows, ncols)
+        if pixel == 'centre': 
+            loc = np.where(data_mtx == nrows * ncols / 2)
+        elif isinstance(pixel, int):
+            loc = np.where(data_mtx == pixel)
+        elif pixel == 'mean': 
+            loc = None
+        else:
+            raise TypeError('"pixel" kwarg must be either of type str ("center" '
+                            'or "mean") or int')
+        pd_time = pd.to_datetime(self.data_array.time.data)
+        n_days = np.array((pd_time - pd_time[0]).days)
+        if loc: 
+            data = self.data_array.data[loc[0], loc[1], :].flatten()
+        else:
+            data = self.data_array.mean(['x', 'y'])
+        valid_idx = np.where(~np.isnan(data))    
+        f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])
+        interp_series = f(n_days)
+        smooth_series = signal.savgol_filter(interp_series, n_points, poly_order, 
+                                             mode = "mirror")
+        df = pd.DataFrame({'data': data, 'data_interp': interp_series,
+                           'data_smooth': smooth_series}, index = pd_time.date)
+        return df
+    #--------------------------------------------------------------------------
+    
+    #--------------------------------------------------------------------------
+    def plot_data(self, pixel = 'centre', smooth = True):
+        
+        df = self.interp_and_smooth(self.data_array, pixel = pixel)
         fig, ax = plt.subplots(1, 1, figsize = (14, 8))
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
@@ -149,34 +192,6 @@ class modis_data_network(object):
         ax.plot(df.index, df.data_interp, lw = 0.5)
         if smooth:
             ax.plot(df.index, df.data_smooth, lw = 2)
-    #--------------------------------------------------------------------------
-
-    #--------------------------------------------------------------------------
-    def interp_and_filter(self, n_points = 11, poly_order = 3, 
-                          pixel_num = 'centre'):
-        
-        """Interpolate (Akima) and smooth (Savitzky-Golay) signal"""
-        
-        nrows = self.data_array.attrs['nrows']
-        ncols = self.data_array.attrs['ncols']
-        data_mtx = np.arange(nrows * ncols).reshape(nrows, ncols)
-        if not pixel_num == 'centre':
-            if not isinstance(pixel_num, int): 
-                raise TypeError('"pixel_num" kwarg must be of type integer')
-            loc = np.where(data_mtx == pixel_num)
-        else:
-            loc = np.where(data_mtx == nrows * ncols / 2)
-        pd_time = pd.to_datetime(self.data_array.time.data)
-        n_days = np.array((pd_time - pd_time[0]).days)
-        data = self.data_array.data[loc[0], loc[1], :].flatten()
-        valid_idx = np.where(~np.isnan(data))    
-        f = interpolate.Akima1DInterpolator(n_days[valid_idx], data[valid_idx])
-        interp_series = f(n_days)
-        smooth_series = signal.savgol_filter(interp_series, n_points, poly_order, 
-                                             mode = "mirror")
-        df = pd.DataFrame({'data': data, 'data_interp': interp_series,
-                           'data_smooth': smooth_series}, index = pd_time.date)
-        return df
     #--------------------------------------------------------------------------
 
     #--------------------------------------------------------------------------
