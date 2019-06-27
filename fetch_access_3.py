@@ -54,6 +54,28 @@ def check_seen_files(opendap_url, base_dir, site_list):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+def check_set_subdirs(base_dir):
+    
+    """Check if required directories reside in base directory 
+       and create if not"""
+    
+    missing_dirs = []
+    for sub_dir in ['Continental_files', 'Monthly_files', 
+                    'Precip_forecast_files', 'Working_files']:
+        expected_path = os.path.join(base_dir, sub_dir)
+        if os.path.exists(expected_path): next
+        os.makedirs(expected_path)
+        missing_dirs.append(sub_dir)
+    if not missing_dirs:
+        print 'All required subdirectories present'
+    else:
+        missing_str = ', '.join(missing_dirs)
+        print ('The following directories were missing and have been created {}'
+               .format(missing_str))
+    return
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 def get_files_from_datestring(datestring):
     
     """Turn standard datestring format for ACCESS directories into list of 
@@ -104,13 +126,14 @@ def _list_opendap_dirs(url):
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
-def nco_exec(site_name, date_directory, latitude, longitude):
+def nco_exec(base_directory, site_name, date_directory, latitude, longitude):
 
     """Call the shell script that cuts out the site coordinates and 
        concatenates with existing data (using NCO)"""
     
-    exec_string = ('./nco_shell.sh "{0}" "{1}" "{2}" "{3}"'
-                   .format(site_name, date_directory, latitude, longitude))    
+    exec_string = ('./nco_shell.sh "{0}" "{1}" "{2}" "{3}" "{4}"'
+                   .format(base_directory, site_name, date_directory, 
+                           latitude, longitude))    
     if spc(exec_string, shell = True):
         raise RuntimeError('Error in command: {}'.format(exec_string))
     return
@@ -156,6 +179,9 @@ master_file_path = '/mnt/OzFlux/Sites/site_master.xls'
 # MAIN PROGRAM
 #------------------------------------------------------------------------------
 
+# Check the base directory contains the required subdirs, create if not
+check_set_subdirs(base_dir)
+
 # Get site details
 site_df = get_ozflux_site_list(master_file_path)
 
@@ -188,8 +214,8 @@ for this_dir in sorted(files_dict.keys()):
         
         try:
             site_details = site_df.loc[site]
-            nco_exec(site_details.name, this_dir, site_details.Latitude,
-                     site_details.Longitude)            
+            nco_exec(base_dir, site_details.name, this_dir, 
+                     site_details.Latitude, site_details.Longitude)            
         except RuntimeError, e:
             print e
             continue
