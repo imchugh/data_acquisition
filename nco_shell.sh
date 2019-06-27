@@ -9,12 +9,12 @@
 # the next 6-hour period 
 
 # Initialise vars
-SITE="$1"
-DATETIME="$2"
-LATITUDE="$3"
-LONGITUDE="$4"
+BASE_DIR="$1"
+SITE="$2"
+DATETIME="$3"
+LATITUDE="$4"
+LONGITUDE="$5"
 DELTA=0.165
-BASE_DIR=/rdsi/market/access_test 
 
 # Get latitude and longitude ranges
 LAT_LO=$(echo "$LATITUDE - $DELTA"|bc)
