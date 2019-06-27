@@ -162,4 +162,4 @@ def get_oz_site_list():
         df.loc[:, col] = pd.to_numeric(df[col])
     aus_df = df[df['CTRY ST'] == 'AS']
     
-    return aus_df
+    return df#aus_df
