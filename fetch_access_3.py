@@ -63,7 +63,8 @@ def check_set_subdirs(base_dir):
     for sub_dir in ['Continental_files', 'Monthly_files', 
                     'Precip_forecast_files', 'Working_files']:
         expected_path = os.path.join(base_dir, sub_dir)
-        if os.path.exists(expected_path): next
+        if os.path.exists(expected_path): continue
+        pdb.set_trace()
         os.makedirs(expected_path)
         missing_dirs.append(sub_dir)
     if not missing_dirs:
