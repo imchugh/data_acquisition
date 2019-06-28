@@ -179,7 +179,7 @@ class modis_data_network(object):
     #--------------------------------------------------------------------------
     def plot_data(self, pixel = 'centre', smooth = True):
         
-        df = self.interp_and_smooth(self.data_array, pixel = pixel)
+        df = self.interp_and_smooth(pixel = pixel)
         fig, ax = plt.subplots(1, 1, figsize = (14, 8))
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
