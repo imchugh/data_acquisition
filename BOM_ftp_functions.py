@@ -6,7 +6,9 @@ Created on Tue May 15 16:08:18 2018
 @author: ian
 """
 
+import datetime as dt
 import ftplib
+import math
 import numpy as np
 import os
 import pandas as pd
@@ -15,6 +17,7 @@ from string import maketrans
 import StringIO
 from timezonefinder import TimezoneFinder as tzf
 import zipfile
+import pdb
 
 ftp_server = 'ftp.bom.gov.au'
 ftp_dir = 'anon2/home/ncc/srds/Scheduled_Jobs/DS010_OzFlux/'
@@ -264,6 +267,42 @@ def get_aws_station_details():
             continue
     df.index = df['station_id']
     return df.sort_index()
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def haversine(lat1, lon1, lat2, lon2):
+    
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = (math.sin(dlat / 2)**2 + math.cos(lat1) * 
+         math.cos(lat2) * math.sin(dlon / 2)**2)
+    c = 2 * math.asin(math.sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers. Use 3956 for miles
+    return c * r
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+def get_closest_bom_station(lat, lon, current = True, nearest_n = 5):
+    
+    stations = get_aws_station_details()
+    stations['dist (km)'] = map(lambda x: haversine(lat, lon, 
+                                                    stations.loc[x, 'lat'], 
+                                                    stations.loc[x, 'lon']),
+                           stations.index)
+    if current:
+        year = str(dt.datetime.now().year)
+        stations = stations.loc[stations.last_file_year == year]
+    df = stations.sort_values(['dist (km)']).head(nearest_n)
+    return df[['station_name', 'dist (km)']]
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
