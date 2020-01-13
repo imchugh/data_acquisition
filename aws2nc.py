@@ -178,7 +178,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             except:
                 continue
 
-    in_filename = os.path.join(in_path, 'HM01X_Data*.csv')
+    in_filename = os.path.join(in_path, 'HM01X_Data*.txt')
     file_list = sorted(glob.glob(in_filename))
     site_list = bom_sites_info.keys()
     for site_name in sorted(site_list):
@@ -288,7 +288,6 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
                 pfp_ts.InterpolateOverMissing(ds,series=label,maxlen=2)
             # put this stations data into the data structure dictionary
             ds_dict[bom_id] = ds
-
         # get the earliest start datetime and the latest end datetime
         logging.info("Finding the start and end dates")
         bom_id_list = ds_dict.keys()
@@ -305,7 +304,7 @@ def aws_to_nc(in_path, out_path, master_file_pathname):
             start_date = min([start_date,ldtn[0]])
             end_date = max([end_date,ldtn[-1]])
         #print start_date,end_date
-    
+
         # merge the individual data structures into a single one
         logging.info("Merging file contents")
         ds_all = pfp_io.DataStructure()
@@ -457,7 +456,7 @@ console.setLevel(logging.INFO)
 logging.getLogger('').addHandler(console)
 
 # Basic configurations
-in_path = "/rdsi/market/aws_ftp"
+in_path = "/rdsi/market/CloudStor/Shared/AWS_BOM_all"
 out_path = "/mnt/OzFlux/Sites/"
 master_file_pathname = "/mnt/OzFlux/Sites/site_master.xls"
 
